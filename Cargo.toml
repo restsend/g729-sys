@@ -1,0 +1,18 @@
+[package]
+name = "g729-sys"
+version = "0.1.0"
+edition = "2021"
+authors = ["jinti<shenjindi@fourz.cn>"]
+description = "Rust FFI bindings and build for bcg729 (G.729 codec)"
+license = "GPL-3.0"
+repository = "https://github.com/yourusername/g729-sys"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+thiserror = "2"
+anyhow = "1"
+
+[build-dependencies]
+cc = "1"
