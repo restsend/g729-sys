@@ -190,47 +190,6 @@ pub fn dot_product_16_32_q12(x: &[Word16], y: &[Word32]) -> Word32 {
         sum = vaddvq_s32(sum_vec);
     }
 
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        let mut sum_vec = _mm_setzero_si128();
-        while i + 4 <= len {
-            let a_16 = _mm_loadl_epi64(x.as_ptr().add(i) as *const _); // Load 4 i16 (64 bits) into low part of XMM
-                                                                       // Sign extend to 32-bit using SSE2 trick
-            let a_32 = _mm_srai_epi32(_mm_unpacklo_epi16(a_16, a_16), 16);
-
-            let b = _mm_loadu_si128(y.as_ptr().add(i) as *const _); // Load 4 i32
-
-            // Low 2 elements
-            let prod_even = _mm_mul_epi32(a_32, b);
-
-            // High 2 elements (shuffle to move 1,3 to 0,2)
-            let a_high = _mm_shuffle_epi32(a_32, 0xF5); // 3,3,1,1 -> 11 11 01 01
-            let b_high = _mm_shuffle_epi32(b, 0xF5);
-            let prod_odd = _mm_mul_epi32(a_high, b_high);
-
-            // Shift right by 12
-            let prod_even_shifted = _mm_srai_epi64(prod_even, 12);
-            let prod_odd_shifted = _mm_srai_epi64(prod_odd, 12);
-
-            // Shuffle to get low 32 bits of each 64 bit
-            let res_even = _mm_shuffle_epi32(prod_even_shifted, 0x08); // 00 00 10 00 -> 2,0
-            let res_odd = _mm_shuffle_epi32(prod_odd_shifted, 0x08);
-
-            // Unpack
-            let res = _mm_unpacklo_epi32(res_even, res_odd); // 0e, 0o, 2e, 2o -> 0, 1, 2, 3
-
-            sum_vec = _mm_add_epi32(sum_vec, res);
-
-            i += 4;
-        }
-        // Horizontal sum
-        let high = _mm_unpackhi_epi64(sum_vec, sum_vec);
-        let sum_vec = _mm_add_epi32(sum_vec, high);
-        let high = _mm_shuffle_epi32(sum_vec, 1);
-        let sum_vec = _mm_add_epi32(sum_vec, high);
-        sum = _mm_cvtsi128_si32(sum_vec);
-    }
-
     while i < len {
         sum = mac16_32_q12(sum, x[i], y[i]);
         i += 1;
