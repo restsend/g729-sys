@@ -1,17 +1,20 @@
 [package]
 name = "g729-sys"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 authors = ["jinti<shenjindi@fourz.cn>"]
-description = "Rust implementation of G.729 codec"
+description = "Rust implementation of G.729 codec (no_std compatible)"
 license = "MIT"
 repository = "https://github.com/restsend/g729-sys"
+keywords = ["g729", "audio", "codec", "no_std", "embedded"]
+categories = ["multimedia", "embedded", "no-std"]
 
 [lib]
 crate-type = ["rlib"]
 
-[dependencies]
-anyhow = "1"
+[features]
+default = ["std"]
+std = []
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

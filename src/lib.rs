@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 pub mod g729;
 
 /// One G.729 frame contains 80 16-bit PCM samples at 8 kHz.
@@ -11,16 +13,36 @@ pub struct Encoder {
 }
 
 impl Encoder {
-    pub fn new(enable_vad: bool) -> anyhow::Result<Self> {
-        Ok(Self {
+    /// Create a new G.729 encoder.
+    ///
+    /// `enable_vad` toggles Annex B (VAD/DTX).
+    pub fn new(enable_vad: bool) -> Self {
+        Self {
             inner: g729::encoder::Encoder::new(enable_vad),
-        })
+        }
     }
 
+    /// Encode one 80-sample frame into the caller-provided buffer.
+    ///
+    /// Returns the number of bytes written to `out` (always `<= VOICE_FRAME_BYTES`).
+    /// This method is always available, including in `no_std`.
+    pub fn encode_into(
+        &mut self,
+        input_80_samples: &[i16; FRAME_SAMPLES],
+        out: &mut [u8; VOICE_FRAME_BYTES],
+    ) -> u8 {
+        let mut len: u8 = 0;
+        self.inner.encode(input_80_samples, out, &mut len);
+        len
+    }
+
+    /// Encode one 80-sample frame into a fresh `Vec<u8>`.
+    ///
+    /// Only available with the `std` feature (enabled by default).
+    #[cfg(feature = "std")]
     pub fn encode(&mut self, input_80_samples: &[i16; FRAME_SAMPLES]) -> Vec<u8> {
         let mut out = [0u8; VOICE_FRAME_BYTES];
-        let mut len: u8 = 0;
-        self.inner.encode(input_80_samples, &mut out, &mut len);
+        let len = self.encode_into(input_80_samples, &mut out);
         out[..len as usize].to_vec()
     }
 
@@ -35,11 +57,18 @@ pub struct Decoder {
     inner: g729::decoder::Decoder,
 }
 
+impl Default for Decoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Decoder {
-    pub fn new() -> anyhow::Result<Self> {
-        Ok(Self {
+    /// Create a new G.729 decoder.
+    pub fn new() -> Self {
+        Self {
             inner: g729::decoder::Decoder::new(),
-        })
+        }
     }
 
     pub fn decode(
