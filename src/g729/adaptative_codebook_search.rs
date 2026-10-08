@@ -29,23 +29,21 @@ pub fn generate_adaptative_codebook_vector(
     let b30_increased_idx = frac_pitch_delay as usize;
     let b30_decreased_idx = (3 - frac_pitch_delay) as usize;
 
+    // Hoist the two strided B30 windows once (stride 3, 10 taps each).
+    let b30_inc = &B30[b30_increased_idx..b30_increased_idx + 28];
+    let b30_dec = &B30[b30_decreased_idx..b30_decreased_idx + 28];
+
     for n in 0..L_SUBFRAME {
         let mut acc: Word32 = 0; // acc in Q15
+                                 // delayedExcitationVector[n-i] == excitation_vector[delayed_idx + n - i]
+        let mut idx1 = delayed_idx + n;
+        let mut idx2 = delayed_idx + n + 1;
         let mut j = 0;
-        for i in 0..10 {
-            // j is used as a 3*i index
-            // WARNING: spec 3.7.1 and A.8 give an equation leading to delayedExcitationVector[n+i]
-            // but ITU code uses delayedExcitationVector[n-i], implemented as code
-            // Note: In Rust we need to be careful with usize subtraction.
-            // delayedExcitationVector points to excitationVector[-intPitchDelay]
-            // So delayedExcitationVector[n-i] is excitationVector[current_idx - intPitchDelay + n - i]
-
-            let idx1 = (delayed_idx as isize + n as isize - i as isize) as usize;
-            let idx2 = (delayed_idx as isize + n as isize + 1 + i as isize) as usize;
-
-            acc = mac16_16(acc, excitation_vector[idx1], B30[b30_increased_idx + j]);
-            acc = mac16_16(acc, excitation_vector[idx2], B30[b30_decreased_idx + j]);
-
+        for _ in 0..10 {
+            acc = mac16_16(acc, excitation_vector[idx1], b30_inc[j]);
+            acc = mac16_16(acc, excitation_vector[idx2], b30_dec[j]);
+            idx1 -= 1;
+            idx2 += 1;
             j += 3;
         }
         // acc in Q15, shift/round to unscaled value and check overflow on 16 bits

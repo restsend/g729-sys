@@ -400,14 +400,15 @@ pub fn lsp_quantization(
         }
 
         /* find closest match for predictionError (minimize mean square diff) in L1 subset codebook: 32 entries from L1 codebook */
-        for i in 0..L1_RANGE {
+        for (i, code) in L1.iter().enumerate().take(L1_RANGE) {
             let mut acc: Word32 = 0;
-            for j in 0..NB_LSP_COEFF {
-                let diff_target_vector_l1 = saturate(
-                    sub32(target_vector[j] as Word32, L1[i][j] as Word32),
-                    MAX_16 as Word32,
-                ) as Word16;
-                acc = mac16_16(acc, diff_target_vector_l1, diff_target_vector_l1);
+            for (t, c) in target_vector.iter().zip(code.iter()) {
+                // saturate(target - code, MAX_16) as a branchless clamp; the
+                // iterator zip drops the per-element bounds checks.
+                let diff = sub32(*t as Word32, *c as Word32)
+                    .clamp(-(MAX_16 as Word32) - 1, MAX_16 as Word32)
+                    as Word16;
+                acc = mac16_16(acc, diff, diff);
             }
 
             if acc < mean_square_diff {

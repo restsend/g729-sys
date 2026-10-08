@@ -9,6 +9,7 @@ fn compute_phi_diagonal(
     impulse_response: &[Word16],
     phi: &mut [[Word32; L_SUBFRAME]; L_SUBFRAME],
     phi_scaling: u16,
+    sign: &[i16],
 ) {
     let j_orig = j as usize;
     let len = j_orig + 1;
@@ -22,20 +23,22 @@ fn compute_phi_diagonal(
     );
 
     let mut acc: Word32 = 0;
-    if phi_scaling == 0 {
-        for k in 0..len {
-            acc = add32(acc, prod[k]);
-            let row = L_SUBFRAME - 1 - k;
-            let col = j_orig - k;
-            phi[row][col] = acc;
-        }
-    } else {
-        for k in 0..len {
-            acc = add32(acc, prod[k]);
-            let row = L_SUBFRAME - 1 - k;
-            let col = j_orig - k;
-            phi[row][col] = shr(acc, phi_scaling as u32);
-        }
+    for k in 0..len {
+        acc = add32(acc, prod[k]);
+        let row = L_SUBFRAME - 1 - k;
+        let col = j_orig - k;
+        let mut s = if phi_scaling == 0 {
+            acc
+        } else {
+            shr(acc, phi_scaling as u32)
+        };
+        // Fold the spec eq56 sign (multiplier is sign[row]*sign[col]) and
+        // mirror the symmetric upper triangle here, so the separate sign and
+        // duplication passes are unnecessary.
+        s *= sign[row] as Word32;
+        s *= sign[col] as Word32;
+        phi[row][col] = s;
+        phi[col][row] = s;
     }
 }
 
@@ -55,7 +58,6 @@ fn compute_impulse_response_correlation_matrix(
 ) {
     let mut acc: Word32 = 0;
     let mut phi_scaling: u16 = 0;
-    let mut correlation_signal_sign_inv = [0i16; L_SUBFRAME];
 
     // first compute the diagonal Phi(x,x) : Phi(39,39) = h[0]^2 # Phi(38,38) = Phi(39,39)+h[1]^2
     // this diagonal must be divided by 2 according to spec 3.8.1 eq57
@@ -78,47 +80,30 @@ fn compute_impulse_response_correlation_matrix(
     }
 
     // Compute all diagonals but the 34, 29, 24, 19, 14, 9 and 4
-    for i in 0..8 {
-        for j in 0..4 {
-            compute_phi_diagonal((5 * i + j) as isize, impulse_response, phi, phi_scaling);
-        }
-    }
+    // (folded into the signed+mirrored pass below)
 
-    // correlationSignal -> absolute value and get sign (and his inverse in an array)
+    // correlationSignal -> absolute value and sign
     for i in 0..L_SUBFRAME {
         if correlation_signal[i] >= 0 {
             correlation_signal_sign[i] = 1;
-            correlation_signal_sign_inv[i] = -1;
         } else {
-            // correlationSignal < 0
             correlation_signal_sign[i] = -1;
-            correlation_signal_sign_inv[i] = 1;
             correlation_signal[i] = -correlation_signal[i];
         }
     }
 
-    // modify the signs according to eq56
-    for i in 0..L_SUBFRAME {
-        let sign_of_correlation_signal_j: &[i16] = if correlation_signal_sign[i] > 0 {
-            correlation_signal_sign
-        } else {
-            &correlation_signal_sign_inv
-        };
-
-        for j in 0..=i {
-            // multiply by the selected sign the matrix element
-            // Note : even the not needed and thus not computed elements are multiplicated... might found other way to do this sign stuff to be more efficient
-            phi[i][j] = phi[i][j] * (sign_of_correlation_signal_j[j] as Word32);
-        }
-    }
-
-    // duplicate the usefull values to their symetric part to get easier acces to the matrix elements
+    // Compute the needed diagonals; compute_phi_diagonal folds the eq56 sign
+    // (sign[row]*sign[col]) and mirrors the symmetric element in one pass, so
+    // the former standalone sign-multiply and duplication passes are gone.
     for i in 0..8 {
         for j in 0..4 {
-            let start_index = 5 * i + j;
-            for k in 0..=start_index {
-                phi[start_index - k][L_SUBFRAME - 1 - k] = phi[L_SUBFRAME - 1 - k][start_index - k];
-            }
+            compute_phi_diagonal(
+                (5 * i + j) as isize,
+                impulse_response,
+                phi,
+                phi_scaling,
+                correlation_signal_sign,
+            );
         }
     }
 }
