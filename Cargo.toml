@@ -1,6 +1,6 @@
 [package]
 name = "g729-sys"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["jinti<shenjindi@fourz.cn>"]
 description = "Rust implementation of G.729 codec (no_std compatible)"
@@ -8,6 +8,9 @@ license = "MIT"
 repository = "https://github.com/restsend/g729-sys"
 keywords = ["g729", "audio", "codec", "no_std", "embedded"]
 categories = ["multimedia", "embedded", "no-std"]
+exclude = [
+    "fuzz/",
+]
 
 [lib]
 crate-type = ["rlib"]
