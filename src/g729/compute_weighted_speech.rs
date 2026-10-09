@@ -14,6 +14,7 @@ use crate::g729::lp_synthesis_filter::*;
 /*      -(o) LPResidualSignal: 80 values of residual signal in Q0            */
 /*                                                                           */
 /*****************************************************************************/
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn compute_weighted_speech(
     input_signal: &[Word16],
     q_lp_coefficients: &[Word16],

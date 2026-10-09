@@ -14,6 +14,7 @@ use crate::g729::utils::count_leading_zeros;
 /*      -the correlation in Q0 on 32 bits                                    */
 /*                                                                           */
 /*****************************************************************************/
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 fn get_correlation(buffer: &[Word16], current_frame_offset: usize, index: usize) -> Word32 {
     let mut correlation: Word32 = 0;
     // i goes from 0 to L_FRAME with step 2.
@@ -45,6 +46,7 @@ fn get_correlation(buffer: &[Word16], current_frame_offset: usize, index: usize)
 /*      - the correlation maximum found on the given range in Q0 on 32 bits  */
 /*                                                                           */
 /*****************************************************************************/
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 fn get_correlation_max(
     index: &mut usize,
     buffer: &[Word16],
@@ -75,6 +77,7 @@ fn get_correlation_max(
 /*      - the openLoopIntegerPitchDelay in Q0 range [20, 143]                */
 /*                                                                           */
 /*****************************************************************************/
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn find_open_loop_pitch_delay(weighted_input_signal: &[Word16]) -> u16 {
     let mut scaled_weighted_input_signal_buffer = [0; MAXIMUM_INT_PITCH_DELAY + L_FRAME];
     let mut autocorrelation: Word64 = 0;

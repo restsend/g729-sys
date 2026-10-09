@@ -20,6 +20,7 @@ fn count_leading_zeros(x: Word32) -> u16 {
 /// # Returns
 ///
 /// * `predicted_gain` - (i32) Predicted fixed codebook gain in Q16.
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn ma_code_gain_prediction(
     previous_gain_prediction_error: &[Word16; 4],
     fixed_codebook_vector: &[Word16],
@@ -76,6 +77,7 @@ pub fn ma_code_gain_prediction(
 ///
 /// * `fixed_codebook_gain_correction_factor` - (i16) Gamma in eq72 in Q3.12.
 /// * `previous_gain_prediction_error` - (i16) Previous gain prediction error in Q10.
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn compute_gain_prediction_error(
     fixed_codebook_gain_correction_factor: Word16,
     previous_gain_prediction_error: &mut [Word16; 4],
@@ -112,6 +114,7 @@ pub fn compute_gain_prediction_error(
 /// * `quantized_fixed_codebook_gain` - (i16) Quantized fixed codebook gain in Q1.
 /// * `gain_codebook_stage1` - (u16) GA parameter value (3 bits).
 /// * `gain_codebook_stage2` - (u16) GB parameter value (4 bits).
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn gain_quantization(
     target_signal: &[Word16],
     filtered_adaptative_codebook_vector: &[Word16],

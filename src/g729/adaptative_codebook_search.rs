@@ -67,6 +67,7 @@ pub fn generate_adaptative_codebook_vector(
 /// * `frac_pitch_delay` - Output fractional part of pitch delay.
 /// * `pitch_delay_codeword` - Output P1 or P2 codeword as in spec 3.7.2.
 /// * `sub_frame_index` - 0 for the first subframe, 40 for the second.
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn adaptative_codebook_search(
     excitation_vector: &mut [Word16],
     current_idx: usize,

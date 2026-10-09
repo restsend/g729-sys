@@ -4,6 +4,7 @@ use crate::g729::utils::{dot_product, vec_mult_16_16};
 
 /// Compute a diagonal of Phi values: start from Phi(39,j) and step Phi(38, j-1) down to Phi(39-j, 0)
 /// Phi(i,j) = Phi(i+1,j+1) + h(39-i)*h(39-j)
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 fn compute_phi_diagonal(
     j: isize,
     impulse_response: &[Word16],
@@ -50,6 +51,7 @@ fn compute_phi_diagonal(
 /// * `correlation_signal` - 40 values in Q12 get absolute value of input as output as specified in spec 3.8.1
 /// * `correlation_signal_sign` - 40 values of -1 or 1 : the sign of the input correlationSignal elements
 /// * `phi` - a triangular matrix composed of Phi(i,j) in Q24
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 fn compute_impulse_response_correlation_matrix(
     impulse_response: &[Word16],
     correlation_signal: &mut [Word16],
@@ -123,6 +125,7 @@ fn compute_impulse_response_correlation_matrix(
 /// * `fixed_codebook_pulses_signs` - Output fixed codebook pulses signs
 /// * `fixed_codebook_vector` - Output 40 values as in spec 3.8, eq45 in Q13
 /// * `fixed_codebook_vector_convolved` - Output 40 values as in spec 3.9, eq64 in Q12
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn fixed_codebook_search(
     target_signal: &[Word16],
     impulse_response: &mut [Word16],

@@ -11,6 +11,7 @@ use crate::g729::ld8k::*;
 /*             [0, L_SUBFRAME[ as output                                     */
 /*                                                                           */
 /*****************************************************************************/
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn lp_synthesis_filter(
     excitation_vector: &[Word16],
     lp_coefficients: &[Word16],

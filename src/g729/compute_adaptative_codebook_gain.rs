@@ -1,6 +1,7 @@
 use crate::g729::basic_operations::*;
 use crate::g729::ld8k::*;
 
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn compute_adaptative_codebook_gain(
     target_signal: &[Word16],
     filtered_adaptative_codebook_vector: &[Word16],

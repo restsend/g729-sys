@@ -8,6 +8,7 @@ use crate::g729::basic_operations::*;
 /*      -(o) f : 6 values in Q24 : polynomial coefficients on 32 bits        */
 /*                                                                           */
 /*****************************************************************************/
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 fn compute_polynomial_coefficients(q_lsp: &[Word16], f: &mut [Word32]) {
     /* init values */
     /* f[-1] which is not available is to be egal at 0, it is directly removed in the following when used as a factor */
@@ -44,6 +45,7 @@ fn compute_polynomial_coefficients(q_lsp: &[Word16], f: &mut [Word32]) {
 /*      -(o) LP : 10 LP coefficients in Q12                                  */
 /*                                                                           */
 /*****************************************************************************/
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn q_lsp_2_lp(q_lsp: &[Word16], lp: &mut [Word16]) {
     let mut f1 = [0 as Word32; 6];
     let mut f2 = [0 as Word32; 6]; /* define two buffer to store the polynomials coefficients (size is 6 for 5 coefficient because fx[0] is used during computation as a buffer) */

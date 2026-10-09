@@ -10,6 +10,7 @@ const PREVIOUS_QLSF_INIT: [Word16; NB_LSP_COEFF] = [
 ]; /* PI*(float)(j+1)/(float)(M+1) */
 
 /* initialise the stactic buffers */
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn init_lsp_quantization(previous_q_lsf: &mut [[Word16; NB_LSP_COEFF]; MA_MAX_K]) {
     for i in 0..MA_MAX_K {
         previous_q_lsf[i].copy_from_slice(&PREVIOUS_QLSF_INIT);
@@ -26,6 +27,7 @@ pub fn init_lsp_quantization(previous_q_lsf: &mut [[Word16; NB_LSP_COEFF]; MA_MA
 /*      -(o) parameters : 3 parameters L0, L1, L2                                 */
 /*                                                                                */
 /**********************************************************************************/
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn noise_lsp_quantization(
     previous_q_lsf: &mut [[Word16; NB_LSP_COEFF]; MA_MAX_K],
     lsp_coefficients: &[Word16],
@@ -332,6 +334,7 @@ pub fn noise_lsp_quantization(
 /*      -(o) parameters : 4 parameters L0, L1, L2, L3                        */
 /*                                                                           */
 /*****************************************************************************/
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn lsp_quantization(
     previous_q_lsf: &mut [[Word16; NB_LSP_COEFF]; MA_MAX_K],
     lsp_coefficients: &[Word16],

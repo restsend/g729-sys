@@ -3,6 +3,7 @@ use crate::g729::codebooks::{WLAG, WLP};
 use crate::g729::ld8k::*;
 use crate::g729::utils::count_leading_zeros;
 
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn auto_correlation_2_lp(
     auto_correlation_coefficients: &[Word32],
     lp_coefficients_q12: &mut [Word16],
@@ -83,6 +84,7 @@ pub fn auto_correlation_2_lp(
     }
 }
 
+#[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn compute_lp(
     signal: &[Word16],
     lp_coefficients_q12: &mut [Word16],
