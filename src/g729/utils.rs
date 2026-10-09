@@ -365,25 +365,34 @@ pub fn cng_parameters_array_2_bit_stream(parameters: &[UWord16], bit_stream: &mu
 }
 
 pub fn parameters_bit_stream_2_array(bit_stream: &[u8], parameters: &mut [UWord16]) {
-    parameters[0] = ((bit_stream[0] >> 7) & 0x1) as UWord16;
-    parameters[1] = (bit_stream[0] & 0x7f) as UWord16;
-    parameters[2] = ((bit_stream[1] >> 3) & 0x1f) as UWord16;
-    parameters[3] =
-        (((bit_stream[1] & 0x7) as UWord16) << 2) | ((bit_stream[2] >> 6) & 0x3) as UWord16;
-    parameters[4] =
-        (((bit_stream[2] & 0x3f) as UWord16) << 2) | ((bit_stream[3] >> 6) & 0x3) as UWord16;
-    parameters[5] = ((bit_stream[3] >> 5) & 0x1) as UWord16;
-    parameters[6] = (((bit_stream[3] & 0x1f) as UWord16) << 8) | bit_stream[4] as UWord16;
-    parameters[7] = ((bit_stream[5] >> 4) & 0xf) as UWord16;
-    parameters[8] = ((bit_stream[5] >> 1) & 0x7) as UWord16;
-    parameters[9] =
-        (((bit_stream[5] & 0x1) as UWord16) << 3) | ((bit_stream[6] >> 5) & 0x7) as UWord16;
-    parameters[10] = (bit_stream[6] & 0x1f) as UWord16;
-    parameters[11] = ((bit_stream[7] as UWord16) << 5) | ((bit_stream[8] >> 3) & 0x1f) as UWord16;
-    parameters[12] =
-        (((bit_stream[8] & 0x7) as UWord16) << 1) | ((bit_stream[9] >> 7) & 0x1) as UWord16;
-    parameters[13] = ((bit_stream[9] >> 4) & 0x7) as UWord16;
-    parameters[14] = (bit_stream[9] & 0xf) as UWord16;
+    // A well-formed G.729 voice frame is 10 bytes, but callers may hand us a
+    // shorter/truncated buffer (e.g. malformed RTP payloads, fuzzing); read
+    // missing bytes as 0 instead of panicking on an out-of-range index.
+    #[inline]
+    fn byte(bit_stream: &[u8], i: usize) -> u8 {
+        bit_stream.get(i).copied().unwrap_or(0)
+    }
+
+    parameters[0] = ((byte(bit_stream, 0) >> 7) & 0x1) as UWord16;
+    parameters[1] = (byte(bit_stream, 0) & 0x7f) as UWord16;
+    parameters[2] = ((byte(bit_stream, 1) >> 3) & 0x1f) as UWord16;
+    parameters[3] = (((byte(bit_stream, 1) & 0x7) as UWord16) << 2)
+        | ((byte(bit_stream, 2) >> 6) & 0x3) as UWord16;
+    parameters[4] = (((byte(bit_stream, 2) & 0x3f) as UWord16) << 2)
+        | ((byte(bit_stream, 3) >> 6) & 0x3) as UWord16;
+    parameters[5] = ((byte(bit_stream, 3) >> 5) & 0x1) as UWord16;
+    parameters[6] = (((byte(bit_stream, 3) & 0x1f) as UWord16) << 8) | byte(bit_stream, 4) as UWord16;
+    parameters[7] = ((byte(bit_stream, 5) >> 4) & 0xf) as UWord16;
+    parameters[8] = ((byte(bit_stream, 5) >> 1) & 0x7) as UWord16;
+    parameters[9] = (((byte(bit_stream, 5) & 0x1) as UWord16) << 3)
+        | ((byte(bit_stream, 6) >> 5) & 0x7) as UWord16;
+    parameters[10] = (byte(bit_stream, 6) & 0x1f) as UWord16;
+    parameters[11] =
+        ((byte(bit_stream, 7) as UWord16) << 5) | ((byte(bit_stream, 8) >> 3) & 0x1f) as UWord16;
+    parameters[12] = (((byte(bit_stream, 8) & 0x7) as UWord16) << 1)
+        | ((byte(bit_stream, 9) >> 7) & 0x1) as UWord16;
+    parameters[13] = ((byte(bit_stream, 9) >> 4) & 0x7) as UWord16;
+    parameters[14] = (byte(bit_stream, 9) & 0xf) as UWord16;
 }
 
 pub fn pseudo_random(random_generator_seed: &mut UWord16) -> UWord16 {
