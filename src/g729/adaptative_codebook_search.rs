@@ -17,10 +17,8 @@ pub fn generate_adaptative_codebook_vector(
     mut int_pitch_delay: i16,
     mut frac_pitch_delay: i16,
 ) {
-    // fracPitchDelay is in range [-1, 1], convert it to [0,2] needed by eqA.8
     frac_pitch_delay = -frac_pitch_delay;
     if frac_pitch_delay < 0 {
-        // if fracPitchDelay is 1 -> pitchDelay of int+(1/3) -> int+1-(2/3)
         int_pitch_delay += 1;
         frac_pitch_delay = 2;
     }
@@ -29,13 +27,12 @@ pub fn generate_adaptative_codebook_vector(
     let b30_increased_idx = frac_pitch_delay as usize;
     let b30_decreased_idx = (3 - frac_pitch_delay) as usize;
 
-    // Hoist the two strided B30 windows once (stride 3, 10 taps each).
     let b30_inc = &B30[b30_increased_idx..b30_increased_idx + 28];
     let b30_dec = &B30[b30_decreased_idx..b30_decreased_idx + 28];
 
     for n in 0..L_SUBFRAME {
         let mut acc: i32 = 0; // acc in Q15
-                              // delayedExcitationVector[n-i] == excitation_vector[delayed_idx + n - i]
+
         for (k, (&inc, &dec)) in b30_inc
             .iter()
             .step_by(3)
@@ -65,7 +62,7 @@ pub fn generate_adaptative_codebook_vector(
 /// * `frac_pitch_delay` - Output fractional part of pitch delay.
 /// * `pitch_delay_codeword` - Output P1 or P2 codeword as in spec 3.7.2.
 /// * `sub_frame_index` - 0 for the first subframe, 40 for the second.
-#[allow(clippy::too_many_arguments)] // fixed-point kernel: each parameter has a distinct Q format
+#[allow(clippy::too_many_arguments)]
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn adaptative_codebook_search(
     excitation_vector: &mut [i16],
@@ -83,7 +80,7 @@ pub fn adaptative_codebook_search(
     let mut correlation_max: i32 = i32::MIN;
 
     // compute the backward Filtered Target Signal as specified in A.3.7: correlation of target signal and impulse response
-    // targetSignal in Q0, impulseResponse in Q12 -> backwardFilteredTargetSignal in Q12
+
     correlate_vectors(
         target_signal,
         impulse_response,
@@ -104,61 +101,47 @@ pub fn adaptative_codebook_search(
         }
     }
 
-    // compute the adaptativeCodebookVector (with fracPitchDelay at 0)
-    // output is in excitationVector[0,L_SUBRAME[ -> excitation_vector[current_idx..current_idx+L_SUBFRAME]
     generate_adaptative_codebook_vector(excitation_vector, current_idx, *int_pitch_delay, 0);
 
-    // if we are at first subframe and intPitchDelay >= 85 -> do not compute fracPitchDelay, set it to 0
     *frac_pitch_delay = 0;
     if !(sub_frame_index == 0 && *int_pitch_delay >= 85) {
-        // compute the fracPitchDelay
         let mut adaptative_codebook_vector_backup = [0_i16; L_SUBFRAME];
 
-        // search the fractionnal part to get the best correlation
-        // we already have in excitationVector for fracPitchDelay = 0 the adaptativeCodebookVector (see specA.3.7)
         correlation_max = dot_product_16_32_q12(
             &excitation_vector[current_idx..current_idx + L_SUBFRAME],
             &backward_filtered_target_signal,
         );
-        // backup the adaptativeCodebookVector
+
         adaptative_codebook_vector_backup
             .copy_from_slice(&excitation_vector[current_idx..current_idx + L_SUBFRAME]);
 
-        // Fractionnal part = -1
         generate_adaptative_codebook_vector(excitation_vector, current_idx, *int_pitch_delay, -1);
         let mut correlation = dot_product_16_32_q12(
             &excitation_vector[current_idx..current_idx + L_SUBFRAME],
             &backward_filtered_target_signal,
         );
         if correlation > correlation_max {
-            // fractional part at -1 gives higher correlation
             *frac_pitch_delay = -1;
             correlation_max = correlation;
-            // backup the adaptativeCodebookVector
+
             adaptative_codebook_vector_backup
                 .copy_from_slice(&excitation_vector[current_idx..current_idx + L_SUBFRAME]);
         }
 
-        // Fractionnal part = 1
         generate_adaptative_codebook_vector(excitation_vector, current_idx, *int_pitch_delay, 1);
         correlation = dot_product_16_32_q12(
             &excitation_vector[current_idx..current_idx + L_SUBFRAME],
             &backward_filtered_target_signal,
         );
         if correlation > correlation_max {
-            // fractional part at 1 gives higher correlation
             *frac_pitch_delay = 1;
         } else {
-            // previously computed fractional part gives better result
-            // restore the adaptativeCodebookVector
             excitation_vector[current_idx..current_idx + L_SUBFRAME]
                 .copy_from_slice(&adaptative_codebook_vector_backup);
         }
     }
 
-    // compute the codeword and intPitchDelayMin/intPitchDelayMax if needed (first subframe only)
     if sub_frame_index == 0 {
-        // first subframe
         // compute intPitchDelayMin/intPitchDelayMax as in spec A.3.7
         *int_pitch_delay_min = *int_pitch_delay - 5;
         if *int_pitch_delay_min < 20 {
@@ -177,7 +160,6 @@ pub fn adaptative_codebook_search(
             *pitch_delay_codeword = (*int_pitch_delay + 112) as u16;
         }
     } else {
-        // second subframe
         // compute the codeword as in spec 3.7.2
         *pitch_delay_codeword =
             (3 * (*int_pitch_delay - *int_pitch_delay_min) + *frac_pitch_delay + 2) as u16;

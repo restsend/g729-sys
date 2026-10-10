@@ -4,35 +4,30 @@ use crate::g729::fixed_point_math::*;
 use crate::g729::ld8k::*;
 use crate::g729::utils::*;
 
-/* static buffers */
 const PREVIOUS_QLSF_INIT: [i16; NB_LSP_COEFF] = [
     2339, 4679, 7018, 9358, 11698, 14037, 16377, 18717, 21056, 23396,
-]; /* PI*(float)(j+1)/(float)(M+1) */
+];
 
-/* initialise the static buffers */
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn init_lsp_quantization() -> [[i16; NB_LSP_COEFF]; MA_MAX_K] {
     [PREVIOUS_QLSF_INIT; MA_MAX_K]
 }
 
 /**********************************************************************************/
-/* noiseLSPQuantization : Convert LSP to LSF, Quantize LSF and find L parameters, */
-/*      qLSF->qLSP as described in spec A3.2.4                                    */
-/*    parameters:                                                                 */
-/*      -(i/o) previousqLSF : 4 previousqLSF, is updated by this function         */
+
 /*      -(i) LSPCoefficients : 10 LSP coefficients in Q15                         */
 /*      -(o) qLSPCoefficients : 10 qLSP coefficients in Q15                       */
 /*      -(o) parameters : 3 parameters L0, L1, L2                                 */
-/*                                                                                */
+
 /**********************************************************************************/
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn noise_lsp_quantization(
     previous_q_lsf: &mut [[i16; NB_LSP_COEFF]; MA_MAX_K],
     lsp_coefficients: &[i16],
     q_lsp_coefficients: &mut [i16],
-    parameters: &mut [u8], // Using u8 as in C uint8_t
+    parameters: &mut [u8],
 ) {
-    let mut lsf = [0; NB_LSP_COEFF]; /* LSF coefficients in Q2.13 range [0, Pi[ */
+    let mut lsf = [0; NB_LSP_COEFF];
     let mut weights = [0_u16; NB_LSP_COEFF]; /* weights in Q11 */
     let mut weights_threshold = [0; NB_LSP_COEFF]; /* store in Q13 the threshold used to compute the weights */
     let mut l1_index = [0; L0_RANGE];
@@ -86,11 +81,9 @@ pub fn noise_lsp_quantization(
             let mut acc = shl(lsf[i] as i32, 15); /* acc in Q2.28 */
             for j in 0..MA_MAX_K {
                 acc = msu16_16(acc, previous_q_lsf[j][i], NOISE_MA_PREDICTOR[l0][j][i]);
-                /* previousqLSF in Q2.13 and MAPredictor in Q0.15-> acc in Q2.28 */
             }
             target_vector[i] =
                 mult16_16_q12(pshr(acc, 15) as i16, INV_NOISE_MA_PREDICTOR_SUM[l0][i]);
-            /* acc->Q13 and invMAPredictorSum in Q12 -> targetVector in Q13 */
         }
 
         /* find closest match for predictionError (minimize mean square diff) in L1 subset codebook: 32 entries from L1 codebook */
@@ -111,13 +104,11 @@ pub fn noise_lsp_quantization(
         }
 
         /* find the closest match in L2 subset wich will minimise the weighted sum of (targetVector - L1 result - L2)^2 */
-        /* using eq20, eq21 and eq23 in spec 3.2.4 -> l[i] - l^[i] = (wi - w^[i])/(1-SumMAPred[i]) but ITU code ignores this denominator */
-        /* works on the first five coefficients only */
+
         mean_square_diff = MAX_32;
         for i in 0..NOISE_L2_RANGE {
             let mut acc: i32 = 0;
             for j in 0..NB_LSP_COEFF / 2 {
-                /* commented code : compute in the same way of the ITU code: ignore the denonimator and minimize (wi - w^[i])/(1-SumMAPred[i]) instead of (wi - w^[i]) square sum */
                 let diff32 = sub32(
                     sub32(
                         target_vector[j],
@@ -128,7 +119,7 @@ pub fn noise_lsp_quantization(
                 let diff_target_vector_l1_l2 = saturate(
                     mult32_16_q15(diff32, NOISE_MA_PREDICTOR_SUM[l0][j]),
                     MAX_16 as i32,
-                ) as i16; /* targetVector, L1 and L2L3 in Q13 -> result in Q13 */
+                ) as i16;
                 acc = mac16_16(
                     acc,
                     diff_target_vector_l1_l2,
@@ -147,7 +138,7 @@ pub fn noise_lsp_quantization(
                 let diff_target_vector_l1_l3 = saturate(
                     mult32_16_q15(diff32, NOISE_MA_PREDICTOR_SUM[l0][j]),
                     MAX_16 as i32,
-                ) as i16; /* targetVector, L1 and L2L3 in Q13 -> result in Q13 */
+                ) as i16;
                 acc = mac16_16(
                     acc,
                     diff_target_vector_l1_l3,
@@ -177,7 +168,6 @@ pub fn noise_lsp_quantization(
             );
         }
 
-        /* rearrange with a minimum distance of 0.0012 */
         for i in 1..NB_LSP_COEFF / 2 {
             if quantized_vector[i - 1] > sub16(quantized_vector[i], GAP1) {
                 quantized_vector[i - 1] = pshr(
@@ -203,7 +193,6 @@ pub fn noise_lsp_quantization(
             }
         }
 
-        /* rearrange the whole quantizedVector with a distance of 0.0006 */
         for i in 1..NB_LSP_COEFF {
             if quantized_vector[i - 1] > sub16(quantized_vector[i], GAP2) {
                 quantized_vector[i - 1] = pshr(
@@ -226,7 +215,7 @@ pub fn noise_lsp_quantization(
                     sub32(target_vector[i], quantized_vector[i] as i32),
                 )),
                 MAX_U16 as i32,
-            ) as u16; /* targetVector and quantizedVector in Q13 -> result in Q13 */
+            ) as u16;
             weighted_mean_square_error[l0] = umac16_16(
                 weighted_mean_square_error[l0],
                 diff_target_vector_quantized_vector,
@@ -270,7 +259,7 @@ pub fn noise_lsp_quantization(
         let mut acc = mult16_16(
             NOISE_MA_PREDICTOR_SUM[parameters[0] as usize][i],
             quantizer_output[i],
-        ); /* (1 - ∑Pi,k)*lˆi(m) Q15 * Q13 -> Q28 */
+        );
         for j in 0..MA_MAX_K {
             acc = mac16_16(
                 acc,
@@ -282,7 +271,6 @@ pub fn noise_lsp_quantization(
         q_lsf[i] = pshr(acc, 15) as i16; /* qLSF in Q2.13 */
     }
 
-    /* update the previousqLSF buffer with current quantizer output */
     for i in (1..MA_MAX_K).rev() {
         previous_q_lsf[i] = previous_q_lsf[i - 1];
     }
@@ -291,47 +279,40 @@ pub fn noise_lsp_quantization(
     /*** qLSF stability check ***/
     insertion_sort(&mut q_lsf);
 
-    /* check for low limit on qLSF[0] */
     if q_lsf[1] < QLSF_MIN {
         q_lsf[1] = QLSF_MIN;
     }
 
-    /* check and rectify minimum distance between two consecutive qLSF */
     for i in 0..NB_LSP_COEFF - 1 {
         if sub16(q_lsf[i + 1], q_lsf[i]) < MIN_QLSF_DISTANCE {
             q_lsf[i + 1] = q_lsf[i] + MIN_QLSF_DISTANCE;
         }
     }
 
-    /* check for upper limit on qLSF[NB_LSP_COEFF-1] */
     if q_lsf[NB_LSP_COEFF - 1] > QLSF_MAX {
         q_lsf[NB_LSP_COEFF - 1] = QLSF_MAX;
     }
 
-    /* convert qLSF to qLSP: qLSP = cos(qLSF) */
     for i in 0..NB_LSP_COEFF {
         q_lsp_coefficients[i] = g729_cos_q13q15(q_lsf[i]); /* ouput in Q0.15 */
     }
 }
 
 /*****************************************************************************/
-/* LSPQuantization : Convert LSP to LSF, Quantize LSF and find L parameters, */
-/*      qLSF->qLSP as described in spec A3.2.4                               */
-/*    parameters:                                                            */
-/*      -(i/o) encoderChannelContext : the channel context data              */
+
 /*      -(i) LSPCoefficients : 10 LSP coefficients in Q15                    */
 /*      -(o) qLSPCoefficients : 10 qLSP coefficients in Q15                  */
 /*      -(o) parameters : 4 parameters L0, L1, L2, L3                        */
-/*                                                                           */
+
 /*****************************************************************************/
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn lsp_quantization(
     previous_q_lsf: &mut [[i16; NB_LSP_COEFF]; MA_MAX_K],
     lsp_coefficients: &[i16],
     q_lsp_coefficients: &mut [i16],
-    parameters: &mut [u16], // Using u16 as in C uint16_t
+    parameters: &mut [u16],
 ) {
-    let mut lsf = [0; NB_LSP_COEFF]; /* LSF coefficients in Q2.13 range [0, Pi[ */
+    let mut lsf = [0; NB_LSP_COEFF];
     let mut weights = [0_u16; NB_LSP_COEFF]; /* weights in Q11 */
     let mut weights_threshold = [0; NB_LSP_COEFF]; /* store in Q13 the threshold used to compute the weights */
     let mut l1_index = [0; L0_RANGE];
@@ -386,18 +367,14 @@ pub fn lsp_quantization(
             let mut acc = shl(lsf[i] as i32, 15); /* acc in Q2.28 */
             for j in 0..MA_MAX_K {
                 acc = msu16_16(acc, previous_q_lsf[j][i], MA_PREDICTOR[l0][j][i]);
-                /* previousqLSF in Q2.13 and MAPredictor in Q0.15-> acc in Q2.28 */
             }
             target_vector[i] = mult16_16_q12(pshr(acc, 15) as i16, INV_MA_PREDICTOR_SUM[l0][i]);
-            /* acc->Q13 and invMAPredictorSum in Q12 -> targetVector in Q13 */
         }
 
         /* find closest match for predictionError (minimize mean square diff) in L1 subset codebook: 32 entries from L1 codebook */
         for (i, code) in L1.iter().enumerate().take(L1_RANGE) {
             let mut acc: i32 = 0;
             for (t, c) in target_vector.iter().zip(code.iter()) {
-                // saturate(target - code, MAX_16) as a branchless clamp; the
-                // iterator zip drops the per-element bounds checks.
                 let diff = sub32(*t, *c as i32).clamp(-(MAX_16 as i32) - 1, MAX_16 as i32) as i16;
                 acc = mac16_16(acc, diff, diff);
             }
@@ -409,13 +386,11 @@ pub fn lsp_quantization(
         }
 
         /* find the closest match in L2 wich will minimise the weighted sum of (targetVector - L1 result - L2)^2 */
-        /* using eq20, eq21 and eq23 in spec 3.2.4 -> l[i] - l^[i] = (wi - w^[i])/(1-SumMAPred[i]) but ITU code ignores this denominator */
-        /* works on the first five coefficients only */
+
         mean_square_diff = MAX_32;
         for (i, l2_candidate) in L2L3.iter().take(L2_RANGE).enumerate() {
             let mut acc: i32 = 0;
             for j in 0..NB_LSP_COEFF / 2 {
-                /* commented code : compute in the same way of the ITU code: ignore the denonimator and minimize (wi - w^[i])/(1-SumMAPred[i]) instead of (wi - w^[i]) square sum */
                 let diff32 = sub32(
                     sub32(target_vector[j], L1[l1_index[l0]][j] as i32),
                     l2_candidate[j] as i32,
@@ -423,7 +398,7 @@ pub fn lsp_quantization(
                 let diff_target_vector_l1_l2 = saturate(
                     mult32_16_q15(diff32, MA_PREDICTOR_SUM[l0][j]),
                     MAX_16 as i32,
-                ) as i16; /* targetVector, L1 and L2L3 in Q13 -> result in Q13 */
+                ) as i16;
                 acc = mac16_16(
                     acc,
                     diff_target_vector_l1_l2,
@@ -438,13 +413,11 @@ pub fn lsp_quantization(
         }
 
         /* find the closest match in L3 wich will minimise the weighted sum of (targetVector - L1 result - L3)^2 */
-        /* using eq20, eq21 and eq23 in spec 3.2.4 -> l[i] - l^[i] = (wi - w^[i])/(1-SumMAPred[i]) but ITU code ignores this denominator */
-        /* works on the first five coefficients only */
+
         mean_square_diff = MAX_32;
         for (i, l3_candidate) in L2L3.iter().take(L2_RANGE).enumerate() {
             let mut acc: i32 = 0;
             for j in NB_LSP_COEFF / 2..NB_LSP_COEFF {
-                /* commented code : compute in the same way of the ITU code: ignore the denonimator and minimize (wi - w^[i])/(1-SumMAPred[i]) instead of (wi - w^[i]) square sum */
                 let diff32 = sub32(
                     sub32(target_vector[j], L1[l1_index[l0]][j] as i32),
                     l3_candidate[j] as i32,
@@ -452,7 +425,7 @@ pub fn lsp_quantization(
                 let diff_target_vector_l1_l3 = saturate(
                     mult32_16_q15(diff32, MA_PREDICTOR_SUM[l0][j]),
                     MAX_16 as i32,
-                ) as i16; /* targetVector, L1 and L2L3 in Q13 -> result in Q13 */
+                ) as i16;
                 acc = mac16_16(
                     acc,
                     diff_target_vector_l1_l3,
@@ -475,7 +448,6 @@ pub fn lsp_quantization(
             quantized_vector[i] = add16(L1[l1_index[l0]][i], L2L3[l3_index[l0]][i]);
         }
 
-        /* rearrange with a minimum distance of 0.0012 */
         for i in 1..NB_LSP_COEFF / 2 {
             if quantized_vector[i - 1] > sub16(quantized_vector[i], GAP1) {
                 quantized_vector[i - 1] = pshr(
@@ -501,7 +473,6 @@ pub fn lsp_quantization(
             }
         }
 
-        /* rearrange the whole quantizedVector with a distance of 0.0006 */
         for i in 1..NB_LSP_COEFF {
             if quantized_vector[i - 1] > sub16(quantized_vector[i], GAP2) {
                 quantized_vector[i - 1] = pshr(
@@ -524,7 +495,7 @@ pub fn lsp_quantization(
                     sub32(target_vector[i], quantized_vector[i] as i32),
                 )),
                 MAX_U16 as i32,
-            ) as u16; /* targetVector and quantizedVector in Q13 -> result in Q13 */
+            ) as u16;
             weighted_mean_square_error[l0] = umac16_16(
                 weighted_mean_square_error[l0],
                 diff_target_vector_quantized_vector,
@@ -570,7 +541,7 @@ pub fn lsp_quantization(
         let mut acc = mult16_16(
             MA_PREDICTOR_SUM[parameters[0] as usize][i],
             quantizer_output[i],
-        ); /* (1 - ∑Pi,k)*lˆi(m) Q15 * Q13 -> Q28 */
+        );
         for j in 0..MA_MAX_K {
             acc = mac16_16(
                 acc,
@@ -582,7 +553,6 @@ pub fn lsp_quantization(
         q_lsf[i] = pshr(acc, 15) as i16; /* qLSF in Q2.13 */
     }
 
-    /* update the previousqLSF buffer with current quantizer output */
     for i in (1..MA_MAX_K).rev() {
         previous_q_lsf[i] = previous_q_lsf[i - 1];
     }
@@ -591,24 +561,20 @@ pub fn lsp_quantization(
     /*** qLSF stability check ***/
     insertion_sort(&mut q_lsf);
 
-    /* check for low limit on qLSF[0] */
     if q_lsf[1] < QLSF_MIN {
         q_lsf[1] = QLSF_MIN;
     }
 
-    /* check and rectify minimum distance between two consecutive qLSF */
     for i in 0..NB_LSP_COEFF - 1 {
         if sub16(q_lsf[i + 1], q_lsf[i]) < MIN_QLSF_DISTANCE {
             q_lsf[i + 1] = q_lsf[i] + MIN_QLSF_DISTANCE;
         }
     }
 
-    /* check for upper limit on qLSF[NB_LSP_COEFF-1] */
     if q_lsf[NB_LSP_COEFF - 1] > QLSF_MAX {
         q_lsf[NB_LSP_COEFF - 1] = QLSF_MAX;
     }
 
-    /* convert qLSF to qLSP: qLSP = cos(qLSF) */
     for i in 0..NB_LSP_COEFF {
         q_lsp_coefficients[i] = g729_cos_q13q15(q_lsf[i]); /* ouput in Q0.15 */
     }

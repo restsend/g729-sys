@@ -1,7 +1,7 @@
 // Basic operations and macros ported from basicOperationsMacros.h and fixedPointMacros.h
 
 pub const MAX_16: i16 = 0x7fff;
-#[allow(dead_code)] // used by the fixed-point unit tests
+#[allow(dead_code)]
 pub const MIN_16: i16 = -0x8000;
 pub const MAX_U16: u16 = 0xffff;
 pub const MAX_32: i32 = 0x7fffffff;
@@ -35,8 +35,6 @@ pub fn shl(a: i32, shift: u32) -> i32 {
 
 #[inline]
 pub fn sshl(a: i32, shift: u32) -> i32 {
-    // Rust's left shift on signed integers is defined as arithmetic shift (preserves sign bit behavior in 2's complement)
-    // which matches the intent of the C macro workaround for UB.
     a << shift
 }
 
@@ -45,7 +43,6 @@ pub fn ushl(a: u32, shift: u32) -> u32 {
     a << shift
 }
 
-/* shift right with rounding: used to extract the integer value of a Qa number */
 #[inline]
 pub fn pshr(a: i32, shift: u32) -> i32 {
     if shift == 0 {
@@ -55,7 +52,6 @@ pub fn pshr(a: i32, shift: u32) -> i32 {
     (a.wrapping_add(half)) >> shift
 }
 
-/* shift right with checking on sign of shift value */
 #[inline]
 pub fn vshr32(a: i32, shift: i32) -> i32 {
     if shift > 0 {
@@ -109,11 +105,8 @@ pub fn sshl64(a: i64, shift: u32) -> i64 {
     a << shift
 }
 
-/* avoid overflows: a+1 is used to check on negative value because range of a 2n signed bits int is -2pow(n) - 2pow(n)-1 */
-/* SATURATE Macro shall be called with MAXINT(nbits). Ex: SATURATE(x,MAXINT16) with MAXINT16  defined to 2pow(16) - 1 */
 #[inline]
 pub fn saturate(x: i32, a: i32) -> i32 {
-    // (((x)>(a) ? (a) : (x)<-(a+1) ? -(a+1) : (x)))
     if x > a {
         a
     } else if x < -(a.wrapping_add(1)) {
@@ -132,7 +125,6 @@ pub fn usaturate(x: i32, a: i32) -> i32 {
     }
 }
 
-/* absolute value */
 #[inline]
 pub fn abs(a: i32) -> i32 {
     a.abs()
@@ -366,7 +358,6 @@ pub fn mac16_32_p15(c: i32, a: i16, b: i32) -> i32 {
     add32(c, mult16_32_p15(a, b))
 }
 
-/* 64 bits operations */
 #[inline]
 pub fn add64(a: i64, b: i64) -> i64 {
     a.wrapping_add(b)
@@ -392,7 +383,6 @@ pub fn mac64(c: i64, a: i32, b: i32) -> i64 {
     c.wrapping_add((a as i64).wrapping_mul(b as i64))
 }
 
-/* Divisions */
 #[inline]
 pub fn div32_32_q24(a: i32, b: i32) -> i64 {
     ((a as i64) << 24) / (b as i64)
@@ -437,8 +427,7 @@ mod tests {
     #[test]
     fn test_add16() {
         assert_eq!(add16(10, 20), 30);
-        // Overflow check? The C macro ADD16 is just cast: ((word16_t)((word16_t)(a)+(word16_t)(b)))
-        // It does NOT saturate. It wraps.
+
         assert_eq!(add16(MAX_16, 1), MIN_16);
     }
 
@@ -450,12 +439,8 @@ mod tests {
 
     #[test]
     fn test_pshr() {
-        // PSHR(a,shift) (SHR((a)+((EXTEND32(1)<<((shift))>>1)),shift))
-        // shift=1: a + (1<<1>>1) = a+1 >> 1. (Rounding)
-        assert_eq!(pshr(3, 1), 2); // (3+1)>>1 = 2
-        assert_eq!(pshr(2, 1), 1); // (2+1)>>1 = 1
-        assert_eq!(pshr(5, 2), 1); // (5 + (1<<2>>1))>>2 = (5+2)>>2 = 7>>2 = 1.
-                                   // Wait. 1<<2 = 4. 4>>1 = 2. 5+2=7. 7>>2 = 1. Correct.
-                                   // 6, 2 -> (6+2)>>2 = 2.
+        assert_eq!(pshr(3, 1), 2);
+        assert_eq!(pshr(2, 1), 1);
+        assert_eq!(pshr(5, 2), 1);
     }
 }

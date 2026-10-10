@@ -59,7 +59,6 @@ pub fn compute_comfort_noise_excitation_vector(
         let mut delta_scale_factor: u8 = 0;
         let mut delta: i64;
 
-        // Random pitch delay in [40, 103] for the adaptive codebook.
         let mut random_number_buffer = pseudo_random(random_generator_seed);
         let mut frac_pitch_delay = (random_number_buffer & 0x0003) as i16 - 1;
         if frac_pitch_delay == 2 {
@@ -68,7 +67,7 @@ pub fn compute_comfort_noise_excitation_vector(
         random_number_buffer >>= 2;
         let int_pitch_delay = (random_number_buffer & 0x003F) as i16 + 40;
         random_number_buffer >>= 6;
-        // Random sign and position for the fixed codebook.
+
         position[0] = ((random_number_buffer & 0x0007) * 5) as i16;
         random_number_buffer >>= 3;
         sign[0] = (random_number_buffer & 0x0001) as i16;
@@ -154,12 +153,10 @@ pub fn compute_comfort_noise_excitation_vector(
             shr32(mult16_16(L_SUBFRAME as i16, target_gain), 3),
         );
 
-        // delta = Ei^2 + (K - 8*Ea)/2
         delta = (ei as i64).wrapping_mul(ei as i64)
             + (((k as i64).wrapping_sub((ea as i64) << 3)) >> 1);
 
         if delta < 0 {
-            // Keep only the gaussian excitation.
             excitation_vector[base..base + L_SUBFRAME]
                 .copy_from_slice(&gaussian_random_excitation[..L_SUBFRAME]);
 
@@ -187,7 +184,6 @@ pub fn compute_comfort_noise_excitation_vector(
 
         ei = svshr32(ei, delta_scale_factor as i32 / 2 - 7);
 
-        // Pick the root with the smaller absolute value.
         gf = sub32(delta, ei);
         let x2: i32 = -add32(delta, ei);
         if abs(x2) < abs(gf) {
@@ -251,7 +247,6 @@ pub fn decode_sid_frame(
                 cng_channel_context.received_sid_gain = SID_GAIN_CODEBOOK[0];
             }
 
-            // Rebuild the reflection coefficients from the payload.
             for (i, k_i) in k.iter_mut().take(cn_filter_order).enumerate() {
                 let b = bit_stream.get(i + 1).copied().unwrap_or(0);
                 *k_i = mult16_16(add16(b as i16, 127), 258) as i16;

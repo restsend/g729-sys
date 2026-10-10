@@ -3,13 +3,11 @@ use crate::g729::ld8k::*;
 
 /*****************************************************************************/
 /* LPSynthesisFilter : as decribed in spec 4.1.6 eq77                        */
-/*    parameters:                                                            */
+
 /*      -(i) excitationVector: u(n), the excitation, 40 values in Q0         */
 /*      -(i) LPCoefficients: 10 LP coefficients in Q12                       */
 /*      -(i/o) recontructedSpeech: 50 values in Q0                           */
-/*             [-NB_LSP_COEFF, -1] of previous values as input               */
-/*             [0, L_SUBFRAME[ as output                                     */
-/*                                                                           */
+
 /*****************************************************************************/
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn lp_synthesis_filter(
@@ -17,11 +15,10 @@ pub fn lp_synthesis_filter(
     lp_coefficients: &[i16],
     reconstructed_speech: &mut [i16],
 ) {
-    /* compute excitationVector[i] - Sum0-9(LPCoefficients[j]*reconstructedSpeech[i-j]) */
     for (i, &excitation) in excitation_vector.iter().enumerate().take(L_SUBFRAME) {
         let base = NB_LSP_COEFF + i;
         let mut acc = sshl(excitation as i32, 12); /* acc get the first term of the sum, in Q12 (excitationVector is in Q0)*/
-        // Unrolled 10-tap MAC (same order as j=0..9: highest history index first).
+
         acc = msu16_16(acc, lp_coefficients[0], reconstructed_speech[base - 1]);
         acc = msu16_16(acc, lp_coefficients[1], reconstructed_speech[base - 2]);
         acc = msu16_16(acc, lp_coefficients[2], reconstructed_speech[base - 3]);

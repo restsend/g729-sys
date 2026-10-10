@@ -7,7 +7,7 @@ mod tests {
     fn test_encoder_init() {
         let mut encoder = EncoderChannelContext::new(false);
         let input_frame = [0i16; L_FRAME];
-        let mut bit_stream = [0u8; 10]; // 80 bits = 10 bytes
+        let mut bit_stream = [0u8; 10];
         let mut bit_stream_length = 0;
 
         encoder.encode(&input_frame, &mut bit_stream, &mut bit_stream_length);
@@ -21,14 +21,12 @@ mod tests {
         let mut bit_stream = [0u8; 10];
         let mut bit_stream_length = 0;
 
-        // Generate a sine wave
         let mut input_frame = [0i16; L_FRAME];
         for (i, sample) in input_frame.iter_mut().enumerate() {
             let angle = i as f32 * 2.0 * core::f32::consts::PI * 440.0 / 8000.0;
             *sample = (angle.sin() * 10000.0) as i16;
         }
 
-        // Encode multiple frames
         for _ in 0..10 {
             encoder.encode(&input_frame, &mut bit_stream, &mut bit_stream_length);
             assert_eq!(bit_stream_length, 10);

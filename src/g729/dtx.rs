@@ -56,7 +56,7 @@ impl DtxChannelContext {
             count_fr: 0,
             q_lsp_coefficients: [0; NB_LSP_COEFF],
         };
-        // Set the past autocorrelation[0] to 1 to avoid arithmetic problems.
+
         for i in 0..7 {
             ctx.autocorrelation_coefficients[i][0] = ONE_IN_Q30;
             ctx.autocorrelation_coefficients_scale[i] = 30;
@@ -147,7 +147,6 @@ fn residual_energy_quantization(
     residual_energy_scale: i8,
     decoded_log_energy: &mut i8,
 ) -> u8 {
-    // -479849 is log2(aw / (NCur*80)).
     let mut acc = sub32(
         g729_log2_q0q16(residual_energy),
         add32(479849, (residual_energy_scale as i32) << 16),
@@ -276,7 +275,6 @@ pub fn encode_sid_frame(
         return;
     }
 
-    // A NOISE frame: sum the autocorrelation of the current and previous frames.
     sum_autocorrelation_coefficients(
         &ctx.autocorrelation_coefficients,
         &ctx.autocorrelation_coefficients_scale,
@@ -461,8 +459,7 @@ pub fn encode_sid_frame(
 
     if frame_type == SID_FRAME {
         *bit_stream_length = 2;
-        // The reference packs the 2 MSB of L2 with "%0x03" (maps 3 to 0);
-        // kept verbatim for bit-exactness.
+
         bit_stream[0] = ((parameters[0] & 0x01) << 7)
             | ((parameters[1] & 0x1F) << 2)
             | ((parameters[2] >> 2) % 0x03);

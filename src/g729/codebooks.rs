@@ -1,6 +1,5 @@
 use crate::g729::ld8k::*;
 
-/* codebook for adaptative code vector */
 pub const B30: [i16; 31] = [
     /* in Q0.15 */
     29443, 25207, 14701, 3143, -4402, -5850, -2783, 1211, 3130, 2259, 0, -1652, -1666, -464, 756,
@@ -531,7 +530,7 @@ pub const INV_NOISE_MA_PREDICTOR_SUM: [[i16; NB_LSP_COEFF]; L0_RANGE] = [
 ];
 
 /*** Gains related codebooks ***/
-/* codebook index mapping */
+
 pub const REVERSE_INDEX_MAPPING_GA: [u16; 8] = [5, 1, 7, 4, 2, 0, 6, 3];
 pub const REVERSE_INDEX_MAPPING_GB: [u16; 16] =
     [2, 14, 3, 13, 0, 15, 1, 12, 6, 10, 7, 9, 4, 11, 5, 8];

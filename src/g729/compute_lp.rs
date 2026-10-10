@@ -15,15 +15,13 @@ pub fn auto_correlation_2_lp(
     let mut e: i32;
     let mut sum: i32;
 
-    /* init */
     lp_coefficients[0] = ONE_IN_Q27;
     lp_coefficients[1] = -div32_32_q27(
         auto_correlation_coefficients[1],
         auto_correlation_coefficients[0],
     ) as i32;
-    reflection_coefficients[0] = sshl(lp_coefficients[1], 4); /* k[0] is -r1/r0 in Q31 */
+    reflection_coefficients[0] = sshl(lp_coefficients[1], 4);
 
-    /* E = r0(1 - a[1]^2) in Q31 */
     e = mult32_32_q31(
         auto_correlation_coefficients[0],
         sub32(
@@ -33,10 +31,8 @@ pub fn auto_correlation_2_lp(
     );
 
     for i in 2..=NB_LSP_COEFF {
-        /* update the previousIterationLPCoefficients needed for this one */
         previous_iteration_lp_coefficients[1..i].copy_from_slice(&lp_coefficients[1..i]);
 
-        /* sum = r[i] + ∑ a[j]*r[i-j] with j = 1..i-1 (a[0] is always 1) */
         sum = 0;
         for j in 1..i {
             sum = mac32_32_q31(
@@ -45,14 +41,11 @@ pub fn auto_correlation_2_lp(
                 auto_correlation_coefficients[i - j],
             );
         }
-        sum = add32(sshl(sum, 4), auto_correlation_coefficients[i]); /* set sum in Q31 and add r[0] */
+        sum = add32(sshl(sum, 4), auto_correlation_coefficients[i]);
 
-        /* a[i] = -sum/E */
         lp_coefficients[i] = -div32_32_q31(sum, e) as i32;
         reflection_coefficients[i - 1] = lp_coefficients[i];
 
-        /* iterations j = 1..i-1 */
-        /* a[j] += a[i]*a[i-j] */
         for j in 1..i {
             lp_coefficients[j] = mac32_32_q31(
                 lp_coefficients[j],
@@ -61,7 +54,6 @@ pub fn auto_correlation_2_lp(
             );
         }
 
-        /* E *=(1-a[i]^2) */
         e = mult32_32_q31(
             e,
             sub32(
@@ -70,7 +62,6 @@ pub fn auto_correlation_2_lp(
             ),
         );
 
-        /* set LPCoefficients[i] from Q31 to Q27 */
         lp_coefficients[i] = shr(lp_coefficients[i], 4);
     }
     *residual_energy = e;
@@ -96,7 +87,6 @@ pub fn compute_lp(
     let mut right_shift_to_normalise = 0;
     let mut residual_energy: i32 = 0;
 
-    /* Compute the windowed signal */
     for ((windowed, &sample), &coeff) in windowed_signal
         .iter_mut()
         .zip(signal.iter())
@@ -105,7 +95,6 @@ pub fn compute_lp(
         *windowed = mult16_16_p15(sample, coeff) as i16;
     }
 
-    /* Compute the autoCorrelation coefficients r[0..10] */
     for &sample in windowed_signal.iter() {
         acc64 = mac64(acc64, sample as i32, sample as i32);
     }
@@ -113,7 +102,6 @@ pub fn compute_lp(
         acc64 = 1;
     }
 
-    /* normalise the acc64 on 32 bits */
     if acc64 > MAXINT32 as i64 {
         while acc64 > MAXINT32 as i64 {
             acc64 = shr64(acc64, 1);
@@ -145,7 +133,6 @@ pub fn compute_lp(
         }
     }
 
-    /* save autocorrelation before applying lag window */
     no_lag_auto_correlation_coefficients[..auto_correlation_coefficients_number]
         .copy_from_slice(&auto_correlation_coefficients[..auto_correlation_coefficients_number]);
 

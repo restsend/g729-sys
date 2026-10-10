@@ -10,8 +10,6 @@ static PREVIOUS_L_CODE_WORD_INIT: [i16; NB_LSP_COEFF] = [
 ];
 
 pub fn init_decode_lsp() -> ([[i16; NB_LSP_COEFF]; MA_MAX_K], u16, [i16; NB_LSP_COEFF]) {
-    /* init the previousLCodeWord buffer according to doc 3.2.4 -> pi/11 steps
-     * and the last valid values, so that the first frame can be a lost one */
     (
         [PREVIOUS_L_CODE_WORD_INIT; MA_MAX_K],
         0,
@@ -20,14 +18,14 @@ pub fn init_decode_lsp() -> ([[i16; NB_LSP_COEFF]; MA_MAX_K], u16, [i16; NB_LSP_
 }
 
 /*****************************************************************************/
-/* computeqLSF : get qLSF extracted from codebooks and process them          */
+
 /*         according to spec 3.2.4                                           */
-/*    parameters:                                                            */
+
 /*      -(i/o) codebookqLSF : 10 values i Q2.13 to be updated                */
 /*      -(i/o) previousCodeWord : codewords for the last 4 subframes in Q2.13*/
-/*                                is updated by this function                */
+
 /*      -(i) L0: the Switched MA predictor retrieved from bitstream          */
-/*                                                                           */
+
 /*****************************************************************************/
 pub fn compute_q_lsf(
     codebook_q_lsf: &mut [i16; NB_LSP_COEFF],
@@ -47,8 +45,6 @@ pub fn compute_q_lsf(
 
     /* L0 is the Switched MA predictor of LSP quantizer(1 bit) */
     /* codebookqLSF and previousLCodeWord in Q2.13 */
-    /* MAPredictor and MAPredictorSum in Q0.15 with MAPredictorSum[MA switch][i]+Sum[j=0-3](MAPredictor[MA switch][j][i])=1 -> acc will end up being in Q2.28*/
-    /* Note : previousLCodeWord array containing the last 4 code words is updated during this phase */
 
     for i in 0..NB_LSP_COEFF {
         acc = mult16_16(current_ma_predictor_sum[l0][i], codebook_q_lsf[i]);
@@ -67,27 +63,22 @@ pub fn compute_q_lsf(
         /* acc in Q2.28, shift back the acc to a Q2.13 with rounding */
         codebook_q_lsf[i] = pshr(acc, 15) as i16; /* codebookqLSF in Q2.13 */
     }
-    /* Note : codebookqLSF buffer now contains qLSF */
 
     /*** doc 3.2.4 qLSF stability ***/
     /* qLSF in Q2.13 as are qLSF_MIN and qLSF_MAX and MIN_qLSF_DISTANCE */
 
-    /* sort the codebookqLSF array */
     insertion_sort(codebook_q_lsf);
 
-    /* check for low limit on qLSF[0] */
     if codebook_q_lsf[0] < QLSF_MIN {
         codebook_q_lsf[0] = QLSF_MIN;
     }
 
-    /* check and rectify minimum distance between two consecutive qLSF */
     for i in 0..NB_LSP_COEFF - 1 {
         if sub16(codebook_q_lsf[i + 1], codebook_q_lsf[i]) < MIN_QLSF_DISTANCE {
             codebook_q_lsf[i + 1] = add16(codebook_q_lsf[i], MIN_QLSF_DISTANCE);
         }
     }
 
-    /* check for upper limit on qLSF[NB_LSP_COEFF-1] */
     if codebook_q_lsf[NB_LSP_COEFF - 1] > QLSF_MAX {
         codebook_q_lsf[NB_LSP_COEFF - 1] = QLSF_MAX;
     }
@@ -95,13 +86,7 @@ pub fn compute_q_lsf(
 
 /*****************************************************************************/
 /* decodeLSP : decode LSP coefficients as in spec 4.1.1/3.2.4                */
-/*    parameters:                                                            */
-/*      -(i/o) decoderChannelContext : the channel context data              */
-/*      -(i) L: 4 elements array containing L[0-3] the first and             */
-/*                     second stage vector of LSP quantizer                  */
-/*      -(i) frameErased : a boolean, when true, frame has been erased       */
-/*      -(o) qLSP: 10 quantized LSP coefficients in Q15 in range [-1,+1[     */
-/*                                                                           */
+
 /*****************************************************************************/
 pub fn decode_lsp(
     previous_l_code_word: &mut [[i16; NB_LSP_COEFF]; MA_MAX_K],
@@ -120,7 +105,7 @@ pub fn decode_lsp(
         /* get the L codewords from the codebooks L1, L2 and L3 */
         /* for easier implementation, L2 and L3 5 dimensional codebooks have been stored in one 10 dimensional L2L3 codebook */
         /* get the 5 first coefficient from the L1 and L2 codebooks */
-        /* Note : currentqLSF buffer contains L codewords and not qLSF */
+
         for i in 0..NB_LSP_COEFF / 2 {
             current_q_lsf[i] = add16(L1[l[1] as usize][i], L2L3[l[2] as usize][i]);
             /* codebooks are in Q2.13 for L1 and Q0.13 for L2L3, due to actual values stored in the codebooks, result in Q2.13 */
@@ -144,26 +129,22 @@ pub fn decode_lsp(
         last_q_lsf.copy_from_slice(&current_q_lsf);
         *last_valid_l0 = l[0];
     } else {
-        /* frame erased indicator is set, proceed according to section 4.4 of the specs */
         let mut acc: i32; /* acc in Q2.28 */
 
-        /* restore the qLSF of last valid frame */
         current_q_lsf.copy_from_slice(last_q_lsf);
 
-        /* compute back the codewords from the qLSF and store them in the previousLCodeWord buffer */
         for i in 0..NB_LSP_COEFF {
             /* currentqLSF and previousLCodeWord in Q2.13, MAPredictor in Q0.15 and invMAPredictorSum in Q3.12 */
-            acc = shl(last_q_lsf[i] as i32, 15); /* Q2.13 -> Q2.28 */
+            acc = shl(last_q_lsf[i] as i32, 15);
             for j in 0..MA_MAX_K {
                 acc = msu16_16(
                     acc,
                     MA_PREDICTOR[*last_valid_l0 as usize][j][i],
                     previous_l_code_word[j][i],
-                ); /* acc in Q2.28 - MAPredictor in Q0.15 * previousLCodeWord in Q2.13 -> acc in Q2.28 (because 1-Sum(MAPred) < 0.6) */
+                );
             }
-            acc = mult16_32_q12(INV_MA_PREDICTOR_SUM[*last_valid_l0 as usize][i], acc); /* Q3.12*Q2.28 >>12 -> Q2.28 because invMAPredictor is 1/(1 - Sum(MAPred))*/
+            acc = mult16_32_q12(INV_MA_PREDICTOR_SUM[*last_valid_l0 as usize][i], acc);
 
-            /* update the array of previoux Code Words */
             for j in (0..MA_MAX_K).rev() {
                 /* acc in Q2.28, shift back the acc to a Q2.13 with rounding */
                 if j > 0 {
@@ -175,7 +156,6 @@ pub fn decode_lsp(
         }
     }
 
-    /* convert qLSF to qLSP: qLSP = cos(qLSF) */
     for i in 0..NB_LSP_COEFF {
         q_lsp[i] = g729_cos_q13q15(current_q_lsf[i]); /* ouput in Q0.15 */
     }

@@ -1,5 +1,3 @@
-// Constants and definitions
-
 pub const L_FRAME: usize = 80;
 pub const L_SUBFRAME: usize = 40;
 pub const NB_LSP_COEFF: usize = 10;
@@ -21,18 +19,15 @@ pub const QLSF_MIN: i16 = 40;
 pub const QLSF_MAX: i16 = 25681;
 pub const MIN_QLSF_DISTANCE: i16 = 321;
 
-/* MAXINTXX define the maximum signed integer value on XX bits(2^(XX-1) - 1) */
-/* used to check on overflows in fixed point mode */
 pub const MAXINT16: i16 = 0x7fff;
-pub const MAX_INT16: i16 = MAXINT16; // Alias
+pub const MAX_INT16: i16 = MAXINT16;
 pub const MAXINT17: i32 = 0xffff;
 pub const MAXINT28: i32 = 0x7ffffff;
 pub const MAXINT29: i32 = 0xfffffff;
-pub const MAX_INT29: i32 = MAXINT29; // Alias
+pub const MAX_INT29: i32 = MAXINT29;
 pub const MININT32: i32 = -0x80000000;
 pub const MAXINT32: i32 = 0x7fffffff;
 
-/* several values used for inits */
 pub const ONE_IN_Q31: i32 = 0x7FFFFFFF;
 pub const ONE_IN_Q30: i32 = 0x40000000;
 pub const ONE_IN_Q27: i32 = 0x08000000;
@@ -44,7 +39,6 @@ pub const ONE_IN_Q11: i32 = 0x00000800;
 pub const HALF_PI_Q13: i16 = 12868;
 pub const HALF_PI_Q15_32: i32 = 51472;
 
-/* 0.04*Pi + 1 and 0.92*Pi - 1 used by LSPQuantization */
 pub const OO4PIPLUS1_IN_Q13: i16 = 9221;
 pub const O92PIMINUS1_IN_Q13: i16 = 15485;
 /* 1.2 in Q14 */

@@ -37,8 +37,7 @@ pub fn ma_code_gain_prediction(
     }
 
     /* compute E| - E as in eq71, result in Q16 */
-    /* acc = 124.2884 - 3.0103*log2(Sum) */
-    /* acc = 8145364[32 bits Q16] - 24660[16 bits Q2.13]*log2(Sum)[32 bits Q16] */
+
     acc = mac16_32_q13(
         8145364,
         -24660,
@@ -46,7 +45,7 @@ pub fn ma_code_gain_prediction(
     ); /* acc in Q16 */
 
     /* accumulate the MA prediction described in eq69 to the previous Sum, result will be in E~(m) + E| -E as used in eq71 */
-    /* acc in Q16->Q24, previousGainPredictionError in Q10 and MAPredictionCoefficients in Q0.14*/
+
     acc = shl(acc, 8); /* acc in Q24 to match the fixed point of next accumulations */
     for i in 0..4 {
         acc = mac16_16(
@@ -55,17 +54,14 @@ pub fn ma_code_gain_prediction(
             MA_PREDICTION_COEFFICIENTS[i],
         );
     }
-    /* acc range [10, 65] -> Q6.24 */
 
     /* compute eq71, we already have the exposant in acc so */
-    /* g'c = 10^(acc/20)                                    */
-    /*     = 2^((acc*ln(10))/(20*ln(2)))                    */
-    /*     = 2^(0,1661*acc)                                 */
-    acc = shr(acc, 2); /* Q24->Q22 */
-    acc = mult16_32_q15(5442, acc); /* 5442 is 0.1661 in Q15 -> acc now in Q4.22 range [1.6, 10.8] */
+
+    acc = shr(acc, 2);
+    acc = mult16_32_q15(5442, acc);
     acc = pshr(acc, 11); /* get acc in Q4.11 */
 
-    g729_exp2_q11q16(acc as i16) /* acc fits on 16 bits, cast it to word16_t to send it to the exp2 function, output in Q16*/
+    g729_exp2_q11q16(acc as i16)
 }
 
 /// Update the gain prediction error.
@@ -80,16 +76,13 @@ pub fn compute_gain_prediction_error(
     previous_gain_prediction_error: &mut [i16; 4],
 ) {
     /* need to compute eq72: 20log10(fixedCodebookGainCorrectionFactor) */
-    /*  = (20/log2(10))*log2(fixedCodebookGainCorrectionFactor) */
-    /*  = 6.0206*log2(fixedCodebookGainCorrectionFactor) */
-    /* log2 input in Q0, output in Q16,fixedCodebookGainCorrectionFactor being in Q12, we shall substract 12 in Q16(786432) to the result of log2 function -> final result in Q2.16 */
+
     let mut current_gain_prediction_error: i32 = sub32(
         g729_log2_q0q16(fixed_codebook_gain_correction_factor as i32),
         786432,
     );
-    current_gain_prediction_error = pshr(mult16_32_q12(24660, current_gain_prediction_error), 6); /* 24660 = 6.0206 in Q3.12 -> mult result in Q16, precise shift right to get it in Q4.10 */
+    current_gain_prediction_error = pshr(mult16_32_q12(24660, current_gain_prediction_error), 6);
 
-    /* shift the array and insert the current Prediction Error */
     previous_gain_prediction_error[3] = previous_gain_prediction_error[2];
     previous_gain_prediction_error[2] = previous_gain_prediction_error[1];
     previous_gain_prediction_error[1] = previous_gain_prediction_error[0];
@@ -111,7 +104,7 @@ pub fn compute_gain_prediction_error(
 /// * `quantized_fixed_codebook_gain` - (i16) Quantized fixed codebook gain in Q1.
 /// * `gain_codebook_stage1` - (u16) GA parameter value (3 bits).
 /// * `gain_codebook_stage2` - (u16) GB parameter value (4 bits).
-#[allow(clippy::too_many_arguments)] // fixed-point kernel: each parameter has a distinct Q format
+#[allow(clippy::too_many_arguments)]
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn gain_quantization(
     target_signal: &[i16],
@@ -146,7 +139,7 @@ pub fn gain_quantization(
     let mut distance_min: i64 = i64::MAX;
 
     /*** compute spec 3.9 eq63 terms first on 64 bits and then scale them if needed to fit on 32 ***/
-    /* Xy64 and Yy64 already computed during adaptativeCodebookGain computation */
+
     for i in 0..L_SUBFRAME {
         xz64 = mac64(
             xz64,
@@ -194,7 +187,6 @@ pub fn gain_quantization(
     }
 
     if min_normalization < 31 {
-        /* we shall normalise, values are over 32 bits */
         min_normalization = 31 - min_normalization;
         xy = shr64(xy64, min_normalization as u32) as i32;
         yy = shr64(yy64, min_normalization as u32) as i32;
@@ -202,7 +194,6 @@ pub fn gain_quantization(
         yz = shr64(yz64, min_normalization as u32) as i32;
         zz = shr64(zz64, min_normalization as u32) as i32;
     } else {
-        /* no need to normalise, values already fit on 32 bits, just cast them */
         xy = xy64 as i32; /* in Q0 */
         yy = yy64 as i32; /* in Q0 */
         xz = xz64 as i32; /* in Q12 */
@@ -212,16 +203,13 @@ pub fn gain_quantization(
 
     /*** compute the best gains minimizinq eq63 ***/
     /* Note this bestgain computation is not at all described in the spec, got it from ITU code */
-    /* bestAdaptativeCodebookGain = (zz.xy - xz.yz) / (yy*zz) - yz^2) */
-    /* bestfixedCodebookGain = (yy*xz - xy*yz) / (yy*zz) - yz^2) */
+
     /* best gain are computed in Q9 and Q2 and fits on 16 bits */
     let denominator: i64 = mac64(mult32_32(yy, zz), -yz, yz); /* (yy*zz) - yz^2) in Q24 (always >= 0)*/
-    /* avoid division by zero */
+
     if denominator == 0 {
-        /* consider it to be one */
-        best_adaptative_codebook_gain = shr64(mac64(mult32_32(zz, xy), -xz, yz), 15) as i32; /* MAC in Q24 -> Q9 */
+        best_adaptative_codebook_gain = shr64(mac64(mult32_32(zz, xy), -xz, yz), 15) as i32;
         best_fixed_codebook_gain = shr64(mac64(mult32_32(yy, xz), -xy, yz), 10) as i32;
-    /* MAC in Q12 -> Q2 */
     } else {
         /* bestAdaptativeCodebookGain in Q9 */
         let mut numerator_norm: u16;
@@ -240,7 +228,6 @@ pub fn gain_quantization(
         } else {
             let shifted_denominator: i64 = shr64(denominator, (9 - numerator_norm) as u32);
             if shifted_denominator > 0 {
-                /* can't shift left by 9 the numerator, can we shift right by 9-numeratorNorm the denominator without hiting 0 */
                 best_adaptative_codebook_gain =
                     div64(shl64(numerator, numerator_norm as u32), shifted_denominator) as i32;
             /* bestAdaptativeCodebookGain in Q9 */
@@ -267,7 +254,6 @@ pub fn gain_quantization(
         } else {
             let shifted_denominator: i64 = shr64(denominator, (14 - numerator_norm) as u32); /* bestFixedCodebookGain in Q14 */
             if shifted_denominator > 0 {
-                /* can't shift left by 9 the numerator, can we shift right by 9-numeratorNorm the denominator without hiting 0 */
                 best_fixed_codebook_gain =
                     div64(shl64(numerator, numerator_norm as u32), shifted_denominator) as i32;
             /* bestFixedCodebookGain in Q14 */
@@ -284,16 +270,15 @@ pub fn gain_quantization(
     let predicted_fixed_codebook_gain: i16 = shr32(
         ma_code_gain_prediction(previous_gain_prediction_error, fixed_codebook_vector),
         12,
-    ) as i16; /* in Q16 -> Q4 range [3,1830] */
+    ) as i16;
 
     /***  preselection spec 3.9.2 ***/
     /* Note: spec just says to select the best 50% of each vector, ITU code go through magical constant computation to select the begining of a continuous range */
-    /* much more simple here : vector are ordened in growing order so just select 2 (4 for Gb) indexes before the first value to be superior to the best gain previously computed */
+
     while index_base_ga < 6
         && best_fixed_codebook_gain
             > mult16_16_q14(GA_CODEBOOK[index_base_ga][1], predicted_fixed_codebook_gain)
     {
-        /* bestFixedCodebookGain> in Q2, GACodebook in Q12 *predictedFixedCodebookGain in Q4 -> Q16-14 */
         index_base_ga += 1;
     }
     index_base_ga = index_base_ga.saturating_sub(2);
@@ -305,13 +290,12 @@ pub fn gain_quantization(
     index_base_gb = index_base_gb.saturating_sub(4);
 
     /*** test all possibilities of Ga and Gb indexes and select the best one ***/
-    xy = -sshl(xy, 1); /* xy term is always used with a -2 factor */
-    xz = -sshl(xz, 1); /* xz term is always used with a -2 factor */
-    yz = sshl(yz, 1); /* yz term is always used with a 2 factor */
+    xy = -sshl(xy, 1);
+    xz = -sshl(xz, 1);
+    yz = sshl(yz, 1);
 
     for i in 0..4 {
         for j in 0..8 {
-            /* compute gamma->gc and gp */
             let gp: i16 = add16(
                 GA_CODEBOOK[i + index_base_ga][0],
                 GB_CODEBOOK[j + index_base_gb][0],
@@ -319,15 +303,15 @@ pub fn gain_quantization(
             let gamma: i16 = add16(
                 GA_CODEBOOK[i + index_base_ga][1],
                 GB_CODEBOOK[j + index_base_gb][1],
-            ); /* result in Q3.12 (range [0.185, 5.05])*/
-            let gc: i32 = mult16_16_q14(gamma, predicted_fixed_codebook_gain); /* gamma in Q12, predictedFixedCodebookGain in Q4 -> Q16 -14 -> Q2 */
+            );
+            let gc: i32 = mult16_16_q14(gamma, predicted_fixed_codebook_gain);
 
             /* compute E as in eq63 (first term excluded) */
-            let mut acc: i64 = mult32_32(mult16_16(gp, gp), yy); /* acc = gp^2*yy  gp in Q14, yy in Q0 -> acc in Q28 */
-            acc = mac64(acc, mult16_16(gc as i16, gc as i16), zz); /* gc in Q2, zz in Q24 -> acc in Q28, note gc is on 32 bits but in a range making gc^2 fitting on 32 bits */
-            acc = mac64(acc, shl32(gp as i32, 14), xy); /* gp in Q14 shifted to Q28, xy in Q0 -> acc in Q28 */
-            acc = mac64(acc, shl32(gc, 14), xz); /* gc in Q2 shifted to Q16, xz in Q12 -> acc in Q28 */
-            acc = mac64(acc, mult16_16(gp, gc as i16), yz); /* gp in Q14, gc in Q2 yz in Q12 -> acc in Q28 */
+            let mut acc: i64 = mult32_32(mult16_16(gp, gp), yy);
+            acc = mac64(acc, mult16_16(gc as i16, gc as i16), zz);
+            acc = mac64(acc, shl32(gp as i32, 14), xy);
+            acc = mac64(acc, shl32(gc, 14), xz);
+            acc = mac64(acc, mult16_16(gp, gc as i16), yz);
 
             if acc < distance_min {
                 distance_min = acc;
@@ -339,13 +323,11 @@ pub fn gain_quantization(
         }
     }
 
-    /* update the previous gain prediction error */
     compute_gain_prediction_error(
         add16(GA_CODEBOOK[index_ga][1], GB_CODEBOOK[index_gb][1]),
         previous_gain_prediction_error,
     );
 
-    /* mapping of indexes */
     *gain_codebook_stage1 = INDEX_MAPPING_GA[index_ga];
     *gain_codebook_stage2 = INDEX_MAPPING_GB[index_gb];
 }

@@ -33,9 +33,7 @@ fn compute_phi_diagonal(
         } else {
             shr(acc, phi_scaling as u32)
         };
-        // Fold the spec eq56 sign (multiplier is sign[row]*sign[col]) and
-        // mirror the symmetric upper triangle here, so the separate sign and
-        // duplication passes are unnecessary.
+
         s *= sign[row] as i32;
         s *= sign[col] as i32;
         phi[row][col] = s;
@@ -61,16 +59,14 @@ fn compute_impulse_response_correlation_matrix(
     let mut acc: i32 = 0;
     let mut phi_scaling: u16 = 0;
 
-    // first compute the diagonal Phi(x,x) : Phi(39,39) = h[0]^2 # Phi(38,38) = Phi(39,39)+h[1]^2
     // this diagonal must be divided by 2 according to spec 3.8.1 eq57
     let mut i_comp = L_SUBFRAME - 1;
     for &h in impulse_response.iter().take(L_SUBFRAME) {
-        acc = mac16_16(acc, h, h); // impulseResponse in Q12 -> acc in Q24
+        acc = mac16_16(acc, h, h);
         phi[i_comp][i_comp] = shr(acc, 1); // divide by 2: eq57
         i_comp = i_comp.saturating_sub(1);
     }
 
-    // check for possible overflow: Phi will be summed 10 times, so max Phi (by construction Phi[0][0]*2 is the max of Phi-> 2*Phi[0][0]*10 must be < 0x7fff ffff -> Phi[0][0]< 0x06666666 - otherwise scale Phi)
     if phi[0][0] > 0x6666666 {
         // bcg729 countLeadingZeros excludes the sign bit.
         let scaled = (phi[0][0].wrapping_shl(1)).wrapping_add(0x3333333);
@@ -80,10 +76,6 @@ fn compute_impulse_response_correlation_matrix(
         }
     }
 
-    // Compute all diagonals but the 34, 29, 24, 19, 14, 9 and 4
-    // (folded into the signed+mirrored pass below)
-
-    // correlationSignal -> absolute value and sign
     for i in 0..L_SUBFRAME {
         if correlation_signal[i] >= 0 {
             correlation_signal_sign[i] = 1;
@@ -93,9 +85,6 @@ fn compute_impulse_response_correlation_matrix(
         }
     }
 
-    // Compute the needed diagonals; compute_phi_diagonal folds the eq56 sign
-    // (sign[row]*sign[col]) and mirrors the symmetric element in one pass, so
-    // the former standalone sign-multiply and duplication passes are gone.
     for i in 0..8 {
         for j in 0..4 {
             compute_phi_diagonal(
@@ -124,7 +113,7 @@ fn compute_impulse_response_correlation_matrix(
 /// * `fixed_codebook_pulses_signs` - Output fixed codebook pulses signs
 /// * `fixed_codebook_vector` - Output 40 values as in spec 3.8, eq45 in Q13
 /// * `fixed_codebook_vector_convolved` - Output 40 values as in spec 3.9, eq64 in Q12
-#[allow(clippy::too_many_arguments)] // fixed-point kernel: each parameter has a distinct Q format
+#[allow(clippy::too_many_arguments)]
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn fixed_codebook_search(
     target_signal: &[i16],
@@ -140,9 +129,9 @@ pub fn fixed_codebook_search(
 ) {
     let mut fixed_codebook_target_signal = [0_i16; L_SUBFRAME];
     let mut correlation_signal_32 = [0_i32; L_SUBFRAME]; // on 32 bits in Q12
-    let mut correlation_signal = [0_i16; L_SUBFRAME]; // normalised to fit on 13 bits
+    let mut correlation_signal = [0_i16; L_SUBFRAME];
     let mut correlation_signal_max: i32 = 0;
-    // Wait, compute_impulse_response_correlation_matrix expects i16 for sign.
+
     let mut correlation_signal_sign_i16 = [0_i16; L_SUBFRAME];
 
     let mut phi = [[0_i32; L_SUBFRAME]; L_SUBFRAME];
@@ -159,7 +148,6 @@ pub fn fixed_codebook_search(
     let mut m_switch = [[2, 3, 0, 1], [3, 0, 1, 2]];
     let mut jx = 0;
 
-    // compute the target signal for fixed codebook spec 3.8.1 eq50 : fixedCodebookTargetSignal[i] = targetSignal[i] - (adaptativeCodebookGain * filteredAdaptativeCodebookVector[i])
     for i in 0..L_SUBFRAME {
         fixed_codebook_target_signal[i] = msu16_16_q14(
             target_signal[i] as i32,
@@ -174,11 +162,11 @@ pub fn fixed_codebook_search(
             impulse_response[i] as i32,
             impulse_response[i - int_pitch_delay as usize],
             last_quantized_adaptative_codebook_gain,
-        ) as i16; // h[n] = h[n] + β*h[n-T], impulseResponse in Q12, lastQuantizedAdaptativeCodebookGain in Q14
+        ) as i16;
     }
 
     // compute the correlation signal as in spec 3.8.1 eq52
-    // compute on 32 bits and get the maximum
+
     for n in 0..L_SUBFRAME {
         correlation_signal_32[n] = dot_product(
             &fixed_codebook_target_signal[n..L_SUBFRAME],
@@ -194,17 +182,14 @@ pub fn fixed_codebook_search(
         }
     }
 
-    // normalise on 13 bits
     let correlation_signal_max_norm = count_leading_zeros(correlation_signal_max) as u32;
 
     if correlation_signal_max_norm < 18 {
-        // if it doesn't already fit on 13 bits
         for i in 0..L_SUBFRAME {
             correlation_signal[i] =
                 shr(correlation_signal_32[i], 18 - correlation_signal_max_norm) as i16;
         }
     } else {
-        // it fits on 13 bits, just copy it to the 16 bits buffer
         for i in 0..L_SUBFRAME {
             correlation_signal[i] = correlation_signal_32[i] as i16;
         }
@@ -218,7 +203,6 @@ pub fn fixed_codebook_search(
     );
 
     // search for impulses leading to a max in C^2/E : spec 3.8.1 eq53
-    // ... (algorithm description omitted) ...
 
     let mut m3_base = 3;
     while m3_base < 5 {
@@ -227,10 +211,8 @@ pub fn fixed_codebook_search(
             let mut m3_track_correlation_square: i32 = -1;
             let mut m3_track_energy: i32 = 1;
 
-            // Loop on the two maxima of correlation in the m2 index
-            let mut first_m2 = 0; // save the first maximum index to not select it again
-            let mut correlation_m2_m3_max: i16 = 0; // stores the contribution of m2 and m3 impulses to the correlation for the maximum selected
-                                                    // same thing but for the energy
+            let mut first_m2 = 0;
+            let mut correlation_m2_m3_max: i16 = 0;
 
             for _ in 0..2 {
                 let mut correlation_m2: i16 = -1;
@@ -238,24 +220,22 @@ pub fn fixed_codebook_search(
 
                 let mut j = track[0];
                 while j < L_SUBFRAME {
-                    // in the m2 range, find the correlation Max -> select m2
                     if correlation_signal[j] > correlation_m2 && j != first_m2 {
                         current_m2 = j;
                         correlation_m2 = correlation_signal[j];
                     }
                     j += 5;
                 }
-                first_m2 = current_m2; // to avoid selecting the same maximum at next iteration
+                first_m2 = current_m2;
 
                 let energy_m2: i32 = phi[current_m2][current_m2]; // compute the energy with terms of eq55 using m2 only: Phi'(m2,m2)
 
-                // with selected m2, test the 8 m3 possibilities for the current m3 track
                 let mut j = track[1];
                 while j < L_SUBFRAME {
-                    let correlation_m2_m3 = add16(correlation_m2, correlation_signal[j]); // compute the correlation sum due to m2 and m3 pulses
+                    let correlation_m2_m3 = add16(correlation_m2, correlation_signal[j]);
                     let energy_m2_m3 = add32(energy_m2, add32(phi[current_m2][j], phi[j][j])); // compute the energy if eq55 using term including m2 and m3: Phi'(m2,m2) is already in energyM2 + Phi'(m2,m3) + Phi'(m3,m3)
                     let correlation_m2_m3_square = mult16_16(correlation_m2_m3, correlation_m2_m3);
-                    // check if the current correlation/energy couple gives better results than the stored one : maximise C^2/E -> C^2/E > C^2max/Emax => Emax*C^2 > C^2max*E
+
                     if mult32_32(m3_track_energy, correlation_m2_m3_square)
                         > mult32_32(energy_m2_m3, m3_track_correlation_square)
                     {
@@ -270,14 +250,12 @@ pub fn fixed_codebook_search(
             }
             let energy_m2_m3_max: i32 = m3_track_energy;
 
-            // reset the current m3 track correlationSquare and energy
             m3_track_correlation_square = -1;
             m3_track_energy = 1;
 
             let mut i = track[2];
             while i < L_SUBFRAME {
-                // test the 8 possibilities for m0 track
-                let correlation_m2_m3_m0 = add16(correlation_m2_m3_max, correlation_signal[i]); // compute correlation with current m0 taking in account the previously selected m2 and m3
+                let correlation_m2_m3_m0 = add16(correlation_m2_m3_max, correlation_signal[i]);
                 let energy_m2_m3_m0 = add32(
                     energy_m2_m3_max,
                     add32(phi[i][i], add32(phi[i][m2], phi[i][m3])),
@@ -285,16 +263,15 @@ pub fn fixed_codebook_search(
 
                 let mut j = track[3];
                 while j < L_SUBFRAME {
-                    // test the 8 possibilities for m1 track
                     let correlation_m2_m3_m0_m1 =
-                        add16(correlation_m2_m3_m0, correlation_signal[j]); // compute correlation with current m1 taking in account the previously selected m2, m3 and m0
+                        add16(correlation_m2_m3_m0, correlation_signal[j]);
                     let energy_m2_m3_m0_m1 = add32(
                         energy_m2_m3_m0,
                         add32(phi[j][i], add32(phi[j][j], add32(phi[j][m2], phi[j][m3]))),
                     ); // add to the previously computed energy the terms of eq59 we can compute with the selected m1: Phi'(m1,m0) + Phi'(m1,m1) + Phi'(m1,m2) + Phi'(m1,m3)
                     let correlation_m2_m3_m0_m1_square =
                         mult16_16(correlation_m2_m3_m0_m1, correlation_m2_m3_m0_m1);
-                    // check if the current correlation/energy couple gives better results than the stored one : maximise C^2/E -> C^2/E > C^2max/Emax => Emax*C^2 > C^2max*E
+
                     if mult32_32(m3_track_energy, correlation_m2_m3_m0_m1_square)
                         > mult32_32(energy_m2_m3_m0_m1, m3_track_correlation_square)
                     {
@@ -308,7 +285,6 @@ pub fn fixed_codebook_search(
                 i += 5;
             }
 
-            // check with currently selected indexes if this one is better
             if mult32_32(energy_max, m3_track_correlation_square)
                 > mult32_32(m3_track_energy, correlation_square_max)
             {
@@ -329,12 +305,11 @@ pub fn fixed_codebook_search(
             }
         }
         m_switch[0][1] += 1;
-        m_switch[1][0] += 1; // increment the m3Base into the mSwitch
+        m_switch[1][0] += 1;
         m3_base += 1;
     }
 
-    // compute the fixedCodebookVector
-    fixed_codebook_vector[..L_SUBFRAME].fill(0); // reset the vector
+    fixed_codebook_vector[..L_SUBFRAME].fill(0);
 
     // set the four pulses, in Q13
     fixed_codebook_vector[i0] = sshl(correlation_signal_sign_i16[i0] as i32, 13) as i16;
@@ -348,10 +323,9 @@ pub fn fixed_codebook_search(
             fixed_codebook_vector[i] as i32,
             fixed_codebook_vector[i - int_pitch_delay as usize],
             last_quantized_adaptative_codebook_gain,
-        ) as i16; // h[n] = h[n] + β*h[n-T], fixedCodebookVector in Q13, lastQuantizedAdaptativeCodebookGain in Q14
+        ) as i16;
     }
 
-    // compute the parameters
     *fixed_codebook_parameter = (mult16_16_q15(i0 as i16, O2_IN_Q15)
         + ((mult16_16_q15(i1 as i16, O2_IN_Q15)) << 3)
         + ((mult16_16_q15(i2 as i16, O2_IN_Q15)) << 6)
@@ -364,10 +338,10 @@ pub fn fixed_codebook_search(
         | ((((correlation_signal_sign_i16[i3] + 1) >> 1) << 3) as u16);
 
     // compute the fixedCodebook vector convolved with impulse response spec 3.9 eq64
-    // this vector is used in gain quantization but computed here because it's faster doing it having directly the impulses positions
+
     // eq64 make use of fixedCodebook vector adapted by eq48, using the impulse position(and thus fixed codebook vector before the adaptation)  but
     // the impulse response adapted as in eq49 gives the same output
-    // reset the vector
+
     fixed_codebook_vector_convolved[..i0].fill(0);
 
     if correlation_signal_sign_i16[i0] > 0 {

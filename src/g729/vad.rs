@@ -106,7 +106,7 @@ fn multi_boundary_initial_voice_activity_decision(
     if delta_el32 < add32(mult16_32_q13(875, delta_s), -31744) {
         return VOICE;
     }
-    // The reference uses deltaEl32 on both sides here; kept verbatim.
+
     if delta_el32 > add32(mult16_32_q15(30427, delta_el32), 2341) {
         return VOICE;
     }

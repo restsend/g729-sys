@@ -1,6 +1,6 @@
 use crate::g729::basic_operations::*;
 use crate::g729::ld8k::*;
-// use crate::g729::fixed_point_math::*;
+
 use crate::g729::adaptative_codebook_search::*;
 use crate::g729::compute_adaptative_codebook_gain::*;
 use crate::g729::compute_lp::*;
@@ -20,13 +20,8 @@ use crate::g729::utils::*;
 use crate::g729::vad::{bcg729_vad, VadChannelContext};
 
 pub struct EncoderChannelContext {
-    /* buffers used in decoder bloc */
-    /* Signal buffer mapping : 240 word16_t length */
     pub signal_buffer: [i16; L_LP_ANALYSIS_WINDOW],
 
-    // Indices for signal buffer
-    // signalLastInputFrame index = L_LP_ANALYSIS_WINDOW - L_FRAME
-    // signalCurrentFrame index = L_LP_ANALYSIS_WINDOW - L_SUBFRAME - L_FRAME
     pub previous_lsp_coefficients: [i16; NB_LSP_COEFF],
     pub previous_q_lsp_coefficients: [i16; NB_LSP_COEFF],
 
@@ -61,7 +56,6 @@ const PREVIOUS_LSP_INITIAL_VALUES: [i16; NB_LSP_COEFF] = [
     30000, 26000, 21000, 15000, 8000, 0, -8000, -15000, -21000, -26000,
 ];
 
-// Indices
 const SIGNAL_LAST_INPUT_FRAME_IDX: usize = L_LP_ANALYSIS_WINDOW - L_FRAME;
 const SIGNAL_CURRENT_FRAME_IDX: usize = L_LP_ANALYSIS_WINDOW - L_SUBFRAME - L_FRAME;
 
@@ -99,7 +93,6 @@ impl EncoderChannelContext {
     ) {
         let mut parameters = [0u16; NB_PARAMETERS];
 
-        // internal buffers
         let mut lp_coefficients = [0i16; NB_LSP_COEFF];
         let mut lsf_coefficients = [0i16; NB_LSP_COEFF];
         let mut q_lp_coefficients = [0i16; 2 * NB_LSP_COEFF];
@@ -111,19 +104,16 @@ impl EncoderChannelContext {
         let mut parameters_index = 4;
         let mut impulse_response_input = [0i16; L_SUBFRAME];
 
-        // VAD/DTX buffers (used when VAD is enabled)
         let mut reflection_coefficients = [0i32; NB_LSP_COEFF];
         let mut auto_correlation_coefficients = [0i32; NB_LSP_COEFF + 3];
         let mut no_lag_auto_correlation_coefficients = [0i32; NB_LSP_COEFF + 3];
         let mut auto_correlation_coefficients_scale = 0i8;
 
-        // Pre-processing
         self.pre_processing_state.pre_processing(
             input_frame,
             &mut self.signal_buffer[SIGNAL_LAST_INPUT_FRAME_IDX..],
         );
 
-        // Compute LP; VAD needs 13 autocorrelation coefficients, otherwise 11.
         compute_lp(
             &self.signal_buffer,
             &mut lp_coefficients,
@@ -138,12 +128,10 @@ impl EncoderChannelContext {
             },
         );
 
-        // LP to LSP
         if !lp2lsp_conversion(&lp_coefficients, &mut lsp_coefficients) {
             lsp_coefficients.copy_from_slice(&self.previous_lsp_coefficients);
         }
 
-        // Annex B: VAD/DTX.
         if let Some(annex_b) = self.annex_b.as_mut() {
             let vad_channel_context = &mut annex_b.vad;
             let dtx_channel_context = &mut annex_b.dtx;
@@ -167,7 +155,6 @@ impl EncoderChannelContext {
                 &self.signal_buffer[SIGNAL_CURRENT_FRAME_IDX - 1..],
             );
 
-            // Also called on voice frames, to keep the DTX state in sync.
             encode_sid_frame(
                 dtx_channel_context,
                 &mut self.previous_lsp_coefficients,
@@ -181,8 +168,6 @@ impl EncoderChannelContext {
             );
 
             if vad_flag == 0 {
-                // NOISE frame: the SID (if any) is already in bit_stream; update
-                // the encoder memory and return.
                 let mut residual_signal = [0i16; L_FRAME];
 
                 for i in 0..2 * NB_LSP_COEFF {
@@ -211,7 +196,6 @@ impl EncoderChannelContext {
                     &mut residual_signal,
                 );
 
-                // targetSignal = residualSignal - excitationVector
                 let mut lp_coefficients_index = 0;
                 for subframe_index in (0..L_FRAME).step_by(L_SUBFRAME) {
                     for i in 0..L_SUBFRAME {
@@ -232,7 +216,6 @@ impl EncoderChannelContext {
                     lp_coefficients_index += NB_LSP_COEFF;
                 }
 
-                // Frame updates (previous LSP/qLSP were set inside encode_sid_frame).
                 self.signal_buffer.copy_within(L_FRAME.., 0);
                 self.weighted_input_signal.copy_within(L_FRAME.., 0);
                 self.excitation_vector.copy_within(L_FRAME.., 0);
@@ -243,35 +226,27 @@ impl EncoderChannelContext {
 
         *bit_stream_length = 10;
 
-        // LSP Quantization
         lsp_quantization(
             &mut self.previous_q_lsf,
             &lsp_coefficients,
             &mut q_lsp_coefficients,
             &mut parameters,
         );
-        // Interpolate qLSP
+
         interpolate_q_lsp(
             &self.previous_q_lsp_coefficients,
             &q_lsp_coefficients,
             &mut interpolated_q_lsp,
         );
 
-        // Update previous qLSP
         self.previous_q_lsp_coefficients
             .copy_from_slice(&q_lsp_coefficients);
 
-        // qLSP to LP
-        // first subframe
         q_lsp_2_lp(&interpolated_q_lsp, &mut q_lp_coefficients[0..NB_LSP_COEFF]);
-        // second subframe
+
         q_lsp_2_lp(&q_lsp_coefficients, &mut q_lp_coefficients[NB_LSP_COEFF..]);
 
-        // Compute weighted qLP
         for i in 0..2 * NB_LSP_COEFF {
-            // weightedqLPCoefficients[i] = qLPCoefficients[i]*Gamma^(i%10+1)
-            // We can use a helper or just loop.
-            // The C code unrolls it.
             let gamma_idx = i % NB_LSP_COEFF;
             let gamma = match gamma_idx {
                 0 => GAMMA_E1,
@@ -289,12 +264,6 @@ impl EncoderChannelContext {
             weighted_q_lp_coefficients[i] = mult16_16_p15(q_lp_coefficients[i], gamma) as i16;
         }
 
-        // Compute weighted speech
-        // computeWeightedSpeech(encoderChannelContext->signalCurrentFrame, qLPCoefficients, weightedqLPCoefficients, &(encoderChannelContext->weightedInputSignal[MAXIMUM_INT_PITCH_DELAY]), &(encoderChannelContext->excitationVector[L_PAST_EXCITATION]));
-        // signalCurrentFrame is at SIGNAL_CURRENT_FRAME_IDX.
-        // weightedInputSignal output starts at MAXIMUM_INT_PITCH_DELAY.
-        // excitationVector output starts at L_PAST_EXCITATION.
-
         compute_weighted_speech(
             &self.signal_buffer[SIGNAL_CURRENT_FRAME_IDX - NB_LSP_COEFF..],
             &q_lp_coefficients,
@@ -303,7 +272,6 @@ impl EncoderChannelContext {
             &mut self.excitation_vector[L_PAST_EXCITATION..],
         );
 
-        // Open loop pitch search
         let open_loop_pitch_delay = find_open_loop_pitch_delay(&self.weighted_input_signal);
         let mut int_pitch_delay_min = open_loop_pitch_delay as i16 - 3;
         if int_pitch_delay_min < 20 {
@@ -315,7 +283,6 @@ impl EncoderChannelContext {
             int_pitch_delay_min = MAXIMUM_INT_PITCH_DELAY as i16 - 6;
         }
 
-        // Subframe loop
         impulse_response_input[0] = ONE_IN_Q12 as i16;
         impulse_response_input[1..L_SUBFRAME].fill(0);
 
@@ -334,17 +301,12 @@ impl EncoderChannelContext {
             let mut quantized_adaptative_codebook_gain: i16 = 0;
             let mut quantized_fixed_codebook_gain: i16 = 0;
 
-            // Compute impulse response
-            // synthesisFilter(impulseResponseInput, &(weightedqLPCoefficients[LPCoefficientsIndex]), &(impulseResponseBuffer[NB_LSP_COEFF]));
-            // In Rust, synthesis_filter takes the full buffer and writes to the end.
             lp_synthesis_filter(
                 &impulse_response_input,
                 &weighted_q_lp_coefficients[lp_coefficients_index..],
                 &mut impulse_response_buffer,
             );
 
-            // Compute target signal
-            // synthesisFilter( &(encoderChannelContext->excitationVector[L_PAST_EXCITATION+subframeIndex]), &(weightedqLPCoefficients[LPCoefficientsIndex]), &(encoderChannelContext->targetSignal[NB_LSP_COEFF]));
             lp_synthesis_filter(
                 &self.excitation_vector[L_PAST_EXCITATION + subframe_index
                     ..L_PAST_EXCITATION + subframe_index + L_SUBFRAME],
@@ -352,7 +314,6 @@ impl EncoderChannelContext {
                 &mut self.target_signal,
             );
 
-            // Adaptative Codebook Search
             let mut param_pitch_delay: u16 = 0;
             adaptative_codebook_search(
                 &mut self.excitation_vector,
@@ -368,8 +329,6 @@ impl EncoderChannelContext {
             );
             parameters[parameters_index] = param_pitch_delay;
 
-            // Compute adaptative codebook gain
-            // synthesisFilter(&(encoderChannelContext->excitationVector[L_PAST_EXCITATION + subframeIndex]), &(weightedqLPCoefficients[LPCoefficientsIndex]), &(filteredAdaptativeCodebookVector[NB_LSP_COEFF]));
             lp_synthesis_filter(
                 &self.excitation_vector[L_PAST_EXCITATION + subframe_index
                     ..L_PAST_EXCITATION + subframe_index + L_SUBFRAME],
@@ -390,7 +349,6 @@ impl EncoderChannelContext {
                 parameters_index += 1;
             }
 
-            // Fixed Codebook Search
             let mut param_fixed_codebook_idx: u16 = 0;
             let mut param_fixed_codebook_sign: u16 = 0;
 
@@ -410,7 +368,6 @@ impl EncoderChannelContext {
             parameters[parameters_index + 1] = param_fixed_codebook_sign;
             parameters_index += 2;
 
-            // Gain Quantization
             let mut param_gain_stage1: u16 = 0;
             let mut param_gain_stage2: u16 = 0;
 
@@ -431,12 +388,10 @@ impl EncoderChannelContext {
             parameters[parameters_index + 1] = param_gain_stage2;
             parameters_index += 2;
 
-            // Memory updates
             lp_coefficients_index += NB_LSP_COEFF;
             self.last_quantized_adaptative_codebook_gain =
                 quantized_adaptative_codebook_gain.clamp(O2_IN_Q14, ONE_POINT_2_IN_Q14);
 
-            // Compute excitation
             for (i, sample) in self.excitation_vector[L_PAST_EXCITATION + subframe_index
                 ..L_PAST_EXCITATION + subframe_index + L_SUBFRAME]
                 .iter_mut()
@@ -454,7 +409,6 @@ impl EncoderChannelContext {
                 ) as i16;
             }
 
-            // Update targetSignal memory
             let quantized_adaptative_codebook_gain_q13 =
                 pshr(quantized_adaptative_codebook_gain as i32, 1) as i16;
             for i in 0..NB_LSP_COEFF {
@@ -473,23 +427,17 @@ impl EncoderChannelContext {
             }
         }
 
-        // Frame basis memory updates
-        // shift left by L_FRAME the signal buffer
         self.signal_buffer.copy_within(L_FRAME.., 0);
 
-        // update previousLSP coefficient buffer
         self.previous_lsp_coefficients
             .copy_from_slice(&lsp_coefficients);
         self.previous_q_lsp_coefficients
             .copy_from_slice(&q_lsp_coefficients);
 
-        // shift left by L_FRAME the weightedInputSignal buffer
         self.weighted_input_signal.copy_within(L_FRAME.., 0);
 
-        // shift left by L_FRAME the excitationVector
         self.excitation_vector.copy_within(L_FRAME.., 0);
 
-        // Convert array of parameters into bitStream
         parameters_array_2_bit_stream(&parameters, bit_stream);
     }
 
@@ -501,7 +449,7 @@ impl EncoderChannelContext {
         let mut payload = [0u8; 11];
         if let Some(annex_b) = &self.annex_b {
             let dtx = &annex_b.dtx;
-            /* decodedLogEnergy is the frame mean energy, range [-12,66[ */
+
             payload[0] = (90 - dtx.decoded_log_energy() as i32) as u8;
             let reflection_coefficients = dtx.reflection_coefficients();
             for i in 0..NB_LSP_COEFF {

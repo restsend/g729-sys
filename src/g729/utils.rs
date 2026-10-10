@@ -25,10 +25,10 @@ pub fn get_min_in_array(x: &[i16]) -> i16 {
 
 pub fn compute_parity(mut adaptative_codebook_index: u16) -> u16 {
     let mut parity = 1;
-    adaptative_codebook_index >>= 2; /* ignore the two LSB */
+    adaptative_codebook_index >>= 2;
 
     for _ in 0..6 {
-        parity ^= adaptative_codebook_index & 1; /* XOR with the LSB */
+        parity ^= adaptative_codebook_index & 1;
         adaptative_codebook_index >>= 1;
     }
     parity
@@ -37,7 +37,7 @@ pub fn compute_parity(mut adaptative_codebook_index: u16) -> u16 {
 pub fn rearrange_coefficients(q_lsp: &mut [i16], j: i16) {
     /* qLSP in Q2.13 and J in Q0.13(fitting on 4 bits: possible values 10 and 5) */
     for i in 1..NB_LSP_COEFF {
-        let delta = (add16(sub16(q_lsp[i - 1], q_lsp[i]), j)) / 2; /* delta = (l[i-1] - l[i] +J)/2 */
+        let delta = (add16(sub16(q_lsp[i - 1], q_lsp[i]), j)) / 2;
         if delta > 0 {
             q_lsp[i - 1] = sub16(q_lsp[i - 1], delta); /* qLSP still in Q2.13 */
             q_lsp[i] = add16(q_lsp[i], delta);
@@ -51,7 +51,7 @@ pub fn rearrange_coefficients(q_lsp: &mut [i16], j: i16) {
 fn dot_product_simd(x: &[i16], y: &[i16], len: usize, sum: &mut i32) -> usize {
     let mut i = 0;
     // SAFETY: the loop only runs while `i + 8 <= len` and `len <= x.len()/y.len()`,
-    // so each 8-element load stays within both slices.
+
     unsafe {
         let mut sum_vec = vdupq_n_s32(0);
         while i + 8 <= len {
@@ -70,7 +70,7 @@ fn dot_product_simd(x: &[i16], y: &[i16], len: usize, sum: &mut i32) -> usize {
 fn dot_product_simd(x: &[i16], y: &[i16], len: usize, sum: &mut i32) -> usize {
     let mut i = 0;
     // SAFETY: the loop only runs while `i + 8 <= len` and `len <= x.len()/y.len()`,
-    // so each 8-element load stays within both slices.
+
     unsafe {
         let mut sum_vec = _mm_setzero_si128();
         while i + 8 <= len {
@@ -111,7 +111,7 @@ pub fn dot_product(x: &[i16], y: &[i16]) -> i32 {
 fn dot_product_16_32_q12_simd(x: &[i16], y: &[i32], len: usize, sum: &mut i32) -> usize {
     let mut i = 0;
     // SAFETY: the loop only runs while `i + 4 <= len` and `len <= x.len()/y.len()`,
-    // so each load of 4 i16 / 4 i32 stays within both slices.
+
     unsafe {
         let mut sum_vec = vdupq_n_s32(0);
         while i + 4 <= len {
@@ -150,8 +150,7 @@ pub fn dot_product_16_32_q12(x: &[i16], y: &[i32]) -> i32 {
 fn vec_mult_16_16_simd(x: &[i16], y: &[i16], out: &mut [i32], len: usize) -> usize {
     let mut i = 0;
     // SAFETY: the loop only runs while `i + 8 <= len` and `len` is the minimum of
-    // the three slice lengths, so the 8-element loads and 4+4-element stores stay
-    // within `x`, `y` and `out`.
+
     unsafe {
         while i + 8 <= len {
             let a = vld1q_s16(x.as_ptr().add(i));
@@ -170,8 +169,7 @@ fn vec_mult_16_16_simd(x: &[i16], y: &[i16], out: &mut [i32], len: usize) -> usi
 fn vec_mult_16_16_simd(x: &[i16], y: &[i16], out: &mut [i32], len: usize) -> usize {
     let mut i = 0;
     // SAFETY: the loop only runs while `i + 8 <= len` and `len` is the minimum of
-    // the three slice lengths, so the 8-element loads and 4+4-element stores stay
-    // within `x`, `y` and `out`.
+
     unsafe {
         while i + 8 <= len {
             let a = _mm_loadu_si128(x.as_ptr().add(i) as *const _);
@@ -254,8 +252,7 @@ pub fn parameters_array_2_bit_stream(parameters: &[u16], bit_stream: &mut [u8]) 
 
 pub fn parameters_bit_stream_2_array(bit_stream: &[u8], parameters: &mut [u16]) {
     // A well-formed G.729 voice frame is 10 bytes, but callers may hand us a
-    // shorter/truncated buffer (e.g. malformed RTP payloads, fuzzing); read
-    // missing bytes as 0 instead of panicking on an out-of-range index.
+
     #[inline]
     fn byte(bit_stream: &[u8], i: usize) -> u8 {
         bit_stream.get(i).copied().unwrap_or(0)
@@ -284,12 +281,6 @@ pub fn parameters_bit_stream_2_array(bit_stream: &[u8], parameters: &mut [u16]) 
 }
 
 pub fn pseudo_random(random_generator_seed: &mut u16) -> u16 {
-    /* pseudoRandomSeed is stored in an uint16_t var, we shall not worry about overflow here */
-    /* pseudoRandomSeed*31821 + 13849; */
-    // MAC16_16(13849, (*randomGeneratorSeed), 31821);
-    // MAC16_16 returns i32.
-    // In C: *randomGeneratorSeed = MAC16_16(...)
-    // It implicitly casts i32 to uint16_t (truncates).
     let res = mac16_16(13849, *random_generator_seed as i16, 31821);
     *random_generator_seed = res as u16;
     *random_generator_seed
@@ -303,14 +294,13 @@ mod tests {
     fn test_dot_product() {
         let x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         let y = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-        // Sum = 55
+
         assert_eq!(dot_product(&x, &y), 55);
 
         let x = [MAX_16, 1];
         let y = [1, 1];
         assert_eq!(dot_product(&x, &y), MAX_16 as i32 + 1);
 
-        // Test negative
         let x = [-1, -2];
         let y = [1, 1];
         assert_eq!(dot_product(&x, &y), -3);
