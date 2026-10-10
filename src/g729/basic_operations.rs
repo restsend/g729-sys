@@ -196,7 +196,7 @@ pub fn mult16_16(a: Word16, b: Word16) -> Word32 {
 
 #[inline]
 pub fn mult16_32(a: Word16, b: Word32) -> Word32 {
-    (a as Word32) * b
+    (a as Word32).wrapping_mul(b)
 }
 
 #[inline]
@@ -387,6 +387,25 @@ pub fn mult16_32_p15(a: Word16, b: Word32) -> Word32 {
 
 #[inline]
 pub fn mult16_32_q15(a: Word16, b: Word32) -> Word32 {
+    ((a as i64 * b as i64) >> 15) as Word32
+}
+
+/// Mirror of bcg729's `MULT16_16_Q15` when the first operand is a full 32-bit
+/// value (the macro multiplies 32-bit operands, it does not truncate to 16 bits).
+#[inline]
+pub fn mult32_16_q15(a: Word32, b: Word16) -> Word32 {
+    ((a as i64 * b as i64) >> 15) as Word32
+}
+
+/// Mirror of bcg729's `MULT16_16` when the first operand is a full 32-bit value.
+#[inline]
+pub fn mult32_16(a: Word32, b: Word16) -> Word32 {
+    (a as i64 * b as i64) as Word32
+}
+
+/// Mirror of bcg729's `MULT16_32_Q15` with both operands 32-bit.
+#[inline]
+pub fn mult32_32_q15(a: Word32, b: Word32) -> Word32 {
     ((a as i64 * b as i64) >> 15) as Word32
 }
 

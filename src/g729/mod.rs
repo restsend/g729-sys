@@ -28,6 +28,8 @@ pub mod decode_fixed_code_vector;
 pub mod decode_gains;
 pub mod decode_lsp;
 pub mod decoder;
+pub mod dtx;
 pub mod gain_quantization;
 pub mod post_filter;
 pub mod post_processing;
+pub mod vad;

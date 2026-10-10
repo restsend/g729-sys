@@ -148,22 +148,21 @@ pub fn g729_cos_q13q15(mut x: Word16) -> Word16 {
             /* x in [Pi/4, Pi/2[ */
             x = sub16(12868, x); /* x = pi/2 -x, x in [0, Pi/4] in Q0.13 */
             x2 = mult16_16_p11(x, x) as Word16; /* in Q0.15 */
-            mult16_16_p13(
-                x,
-                add32(
-                    KSIN1,
-                    mult16_16_p15(
-                        x2,
-                        add32(
-                            KSIN2,
-                            mult16_16_p15(
-                                x2,
-                                add32(KSIN3, mult16_16_p15(KSIN4 as Word16, x2)) as Word16,
-                            ),
-                        ) as Word16,
-                    ),
-                ) as Word16,
-            ) as Word16
+            // sine term may be exactly 32768; keep the multiply 32-bit.
+            let sin_term = add32(
+                KSIN1,
+                mult16_16_p15(
+                    x2,
+                    add32(
+                        KSIN2,
+                        mult16_16_p15(
+                            x2,
+                            add32(KSIN3, mult16_16_p15(KSIN4 as Word16, x2)) as Word16,
+                        ),
+                    ) as Word16,
+                ),
+            );
+            shr(add32(4096, (x as Word32).wrapping_mul(sin_term)), 13) as Word16
         }
     } else {
         /* x in [Pi/2, Pi[ */
@@ -172,21 +171,22 @@ pub fn g729_cos_q13q15(mut x: Word16) -> Word16 {
             /* x in [Pi/2, 3Pi/4], xScaled in [Pi/4, Pi/2] */
             x_scaled = sub16(12868, x_scaled); /* xScaled = pi/2 - xScaled = x - Pi/2, xScaled in [0, Pi/4] in Q0.13 */
             x2 = mult16_16_p11(x_scaled, x_scaled) as Word16; /* in Q0.15 */
-            mult16_16_p13(
-                neg16(x_scaled),
-                add32(
-                    KSIN1,
-                    mult16_16_p15(
-                        x2,
-                        add32(
-                            KSIN2,
-                            mult16_16_p15(
-                                x2,
-                                add32(KSIN3, mult16_16_p15(KSIN4 as Word16, x2)) as Word16,
-                            ),
-                        ) as Word16,
-                    ),
-                ) as Word16,
+            let sin_term = add32(
+                KSIN1,
+                mult16_16_p15(
+                    x2,
+                    add32(
+                        KSIN2,
+                        mult16_16_p15(
+                            x2,
+                            add32(KSIN3, mult16_16_p15(KSIN4 as Word16, x2)) as Word16,
+                        ),
+                    ) as Word16,
+                ),
+            );
+            shr(
+                add32(4096, (neg16(x_scaled) as Word32).wrapping_mul(sin_term)),
+                13,
             ) as Word16
         } else {
             /* x in [3Pi/4, Pi[ -> xScaled in [0, Pi/4], cos(xScaled) = -cos(x) */

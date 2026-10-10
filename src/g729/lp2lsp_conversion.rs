@@ -112,16 +112,24 @@ pub fn lp2lsp_conversion(lp_coefficients: &[Word16], lsp_coefficients: &mut [Wor
 
             /* linear interpolation for better root accuracy */
             /* xMean = xLow - (xHigh-xLow)* previousCx/(Cx-previousCx); */
-            x_mean = sub32(
-                x_low as Word32,
-                mult16_32_q15(
-                    sub32(x_high as Word32, x_low as Word32) as Word16,
-                    div32(
-                        shl(saturate(previous_cx, MAXINT17), 14),
-                        shr(sub32(cx, previous_cx), 1),
+            let delta_x = sub32(x_high as Word32, x_low as Word32);
+            let interp = if previous_cx == cx {
+                /* avoid possible division by 0 */
+                mult32_32_q15(delta_x, if previous_cx > 0 { MAXINT32 } else { MININT32 })
+            } else {
+                // divide, then <<1 (Q14 -> Q15); do not fold the shift into the divisor.
+                mult32_32_q15(
+                    delta_x,
+                    shl(
+                        div32(
+                            shl(saturate(previous_cx, MAXINT17), 14),
+                            sub32(cx, previous_cx),
+                        ),
+                        1,
                     ),
-                ),
-            ) as Word16; /* Cx are in Q2.15 so we can shift them left 14 bits, the denominator is shifted righ by 1 so the division result is in Q15 */
+                )
+            };
+            x_mean = sub32(x_low as Word32, interp) as Word16;
 
             /* recompute previousCx with the new coefficients */
             previous_cx = chebyshev_polynomial(x_mean, if use_f1 { &f1 } else { &f2 });

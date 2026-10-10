@@ -38,7 +38,7 @@ pub fn init_decode_lsp(
 /*      -(i) L0: the Switched MA predictor retrieved from bitstream          */
 /*                                                                           */
 /*****************************************************************************/
-fn compute_q_lsf(
+pub fn compute_q_lsf(
     codebook_q_lsf: &mut [Word16; NB_LSP_COEFF],
     previous_l_code_word: &mut [[Word16; NB_LSP_COEFF]; MA_MAX_K],
     l0: usize,

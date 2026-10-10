@@ -5,8 +5,10 @@ use crate::g729::adaptative_codebook_search::*;
 use crate::g729::compute_adaptative_codebook_gain::*;
 use crate::g729::compute_lp::*;
 use crate::g729::compute_weighted_speech::*;
+use crate::g729::dtx::{encode_sid_frame, update_dtx_context, DtxChannelContext};
 use crate::g729::find_open_loop_pitch_delay::*;
 use crate::g729::fixed_codebook_search::*;
+use crate::g729::fixed_point_math::g729_acos_q15q13;
 use crate::g729::gain_quantization::*;
 use crate::g729::interpolate_q_lsp::*;
 use crate::g729::lp2lsp_conversion::*;
@@ -15,6 +17,7 @@ use crate::g729::lsp_quantization::*;
 use crate::g729::pre_processing::*;
 use crate::g729::q_lsp_2_lp::*;
 use crate::g729::utils::*;
+use crate::g729::vad::{bcg729_vad, VadChannelContext};
 
 pub struct EncoderChannelContext {
     /* buffers used in decoder bloc */
@@ -42,9 +45,11 @@ pub struct EncoderChannelContext {
 
     /*** buffer used in gainQuantization ***/
     pub previous_gain_prediction_error: [Word16; 4],
-    // VAD/DTX context placeholders
-    // pub vad_channel_context: Option<VADChannelContext>,
-    // pub dtx_channel_context: Option<DTXChannelContext>,
+
+    /*** Annex B (VAD/DTX) context, present only when enabled at construction ***/
+    pub enable_vad: bool,
+    pub vad_channel_context: Option<VadChannelContext>,
+    pub dtx_channel_context: Option<DtxChannelContext>,
 }
 
 const PREVIOUS_LSP_INITIAL_VALUES: [Word16; NB_LSP_COEFF] = [
@@ -56,7 +61,16 @@ const SIGNAL_LAST_INPUT_FRAME_IDX: usize = L_LP_ANALYSIS_WINDOW - L_FRAME;
 const SIGNAL_CURRENT_FRAME_IDX: usize = L_LP_ANALYSIS_WINDOW - L_SUBFRAME - L_FRAME;
 
 impl EncoderChannelContext {
-    pub fn new(_enable_vad: bool) -> Self {
+    pub fn new(enable_vad: bool) -> Self {
+        let (vad_channel_context, dtx_channel_context) = if enable_vad {
+            (
+                Some(VadChannelContext::new()),
+                Some(DtxChannelContext::new()),
+            )
+        } else {
+            (None, None)
+        };
+
         let mut ctx = EncoderChannelContext {
             signal_buffer: [0; L_LP_ANALYSIS_WINDOW],
             previous_lsp_coefficients: PREVIOUS_LSP_INITIAL_VALUES,
@@ -68,6 +82,9 @@ impl EncoderChannelContext {
             pre_processing_state: PreProcessingState::new(),
             previous_q_lsf: [[0; NB_LSP_COEFF]; MA_MAX_K],
             previous_gain_prediction_error: [0; 4],
+            enable_vad,
+            vad_channel_context,
+            dtx_channel_context,
         };
 
         // initPreProcessing
@@ -98,7 +115,7 @@ impl EncoderChannelContext {
 
         // internal buffers
         let mut lp_coefficients = [0i16; NB_LSP_COEFF];
-        let _lsf_coefficients = [0i16; NB_LSP_COEFF];
+        let mut lsf_coefficients = [0i16; NB_LSP_COEFF];
         let mut q_lp_coefficients = [0i16; 2 * NB_LSP_COEFF];
         let mut weighted_q_lp_coefficients = [0i16; 2 * NB_LSP_COEFF];
         let mut lsp_coefficients = [0i16; NB_LSP_COEFF];
@@ -108,23 +125,19 @@ impl EncoderChannelContext {
         let mut parameters_index = 4;
         let mut impulse_response_input = [0i16; L_SUBFRAME];
 
-        // VAD placeholders
+        // VAD/DTX buffers (used when VAD is enabled)
         let mut reflection_coefficients = [0i32; NB_LSP_COEFF];
         let mut auto_correlation_coefficients = [0i32; NB_LSP_COEFF + 3];
         let mut no_lag_auto_correlation_coefficients = [0i32; NB_LSP_COEFF + 3];
         let mut auto_correlation_coefficients_scale = 0i8;
 
         // Pre-processing
-        // preProcessing(encoderChannelContext, inputFrame, encoderChannelContext->signalLastInputFrame);
-
         self.pre_processing_state.pre_processing(
             input_frame,
             &mut self.signal_buffer[SIGNAL_LAST_INPUT_FRAME_IDX..],
         );
 
-        // Compute LP
-        // computeLP(encoderChannelContext->signalBuffer, LPCoefficients, reflectionCoefficients, ...);
-        // signalBuffer is used as input.
+        // Compute LP; VAD needs 13 autocorrelation coefficients, otherwise 11.
         compute_lp(
             &self.signal_buffer,
             &mut lp_coefficients,
@@ -132,7 +145,11 @@ impl EncoderChannelContext {
             &mut auto_correlation_coefficients,
             &mut no_lag_auto_correlation_coefficients,
             &mut auto_correlation_coefficients_scale,
-            NB_LSP_COEFF + 1, // VAD disabled for now
+            if self.enable_vad {
+                NB_LSP_COEFF + 3
+            } else {
+                NB_LSP_COEFF + 1
+            },
         );
 
         // LP to LSP
@@ -140,7 +157,110 @@ impl EncoderChannelContext {
             lsp_coefficients.copy_from_slice(&self.previous_lsp_coefficients);
         }
 
-        // VAD check would go here.
+        // Annex B: VAD/DTX.
+        if self.enable_vad {
+            let vad_channel_context = self
+                .vad_channel_context
+                .as_mut()
+                .expect("VAD enabled but context is missing");
+            let dtx_channel_context = self
+                .dtx_channel_context
+                .as_mut()
+                .expect("VAD enabled but context is missing");
+
+            for i in 0..NB_LSP_COEFF {
+                lsf_coefficients[i] = g729_acos_q15q13(lsp_coefficients[i]);
+            }
+
+            update_dtx_context(
+                dtx_channel_context,
+                &no_lag_auto_correlation_coefficients,
+                auto_correlation_coefficients_scale,
+            );
+
+            let vad_flag = bcg729_vad(
+                vad_channel_context,
+                reflection_coefficients[1],
+                &lsf_coefficients,
+                &auto_correlation_coefficients,
+                auto_correlation_coefficients_scale,
+                &self.signal_buffer[SIGNAL_CURRENT_FRAME_IDX - 1..],
+            );
+
+            // Also called on voice frames, to keep the DTX state in sync.
+            encode_sid_frame(
+                dtx_channel_context,
+                &mut self.previous_lsp_coefficients,
+                &mut self.previous_q_lsp_coefficients,
+                vad_flag,
+                &mut self.previous_q_lsf,
+                &mut self.excitation_vector,
+                &mut q_lp_coefficients,
+                bit_stream,
+                bit_stream_length,
+            );
+
+            if vad_flag == 0 {
+                // NOISE frame: the SID (if any) is already in bit_stream; update
+                // the encoder memory and return.
+                let mut residual_signal = [0i16; L_FRAME];
+
+                for i in 0..2 * NB_LSP_COEFF {
+                    let gamma = match i % NB_LSP_COEFF {
+                        0 => GAMMA_E1,
+                        1 => GAMMA_E2,
+                        2 => GAMMA_E3,
+                        3 => GAMMA_E4,
+                        4 => GAMMA_E5,
+                        5 => GAMMA_E6,
+                        6 => GAMMA_E7,
+                        7 => GAMMA_E8,
+                        8 => GAMMA_E9,
+                        9 => GAMMA_E10,
+                        _ => 0,
+                    };
+                    weighted_q_lp_coefficients[i] =
+                        mult16_16_p15(q_lp_coefficients[i], gamma) as Word16;
+                }
+
+                compute_weighted_speech(
+                    &self.signal_buffer[SIGNAL_CURRENT_FRAME_IDX - NB_LSP_COEFF..],
+                    &q_lp_coefficients,
+                    &weighted_q_lp_coefficients,
+                    &mut self.weighted_input_signal[MAXIMUM_INT_PITCH_DELAY - NB_LSP_COEFF..],
+                    &mut residual_signal,
+                );
+
+                // targetSignal = residualSignal - excitationVector
+                let mut lp_coefficients_index = 0;
+                for subframe_index in (0..L_FRAME).step_by(L_SUBFRAME) {
+                    for i in 0..L_SUBFRAME {
+                        self.target_signal[NB_LSP_COEFF + i] = sub16(
+                            residual_signal[subframe_index + i],
+                            self.excitation_vector[L_PAST_EXCITATION + subframe_index + i],
+                        );
+                    }
+                    let mut target_input = [0i16; L_SUBFRAME];
+                    target_input.copy_from_slice(
+                        &self.target_signal[NB_LSP_COEFF..NB_LSP_COEFF + L_SUBFRAME],
+                    );
+                    lp_synthesis_filter(
+                        &target_input,
+                        &weighted_q_lp_coefficients[lp_coefficients_index..],
+                        &mut self.target_signal,
+                    );
+                    lp_coefficients_index += NB_LSP_COEFF;
+                }
+
+                // Frame updates (previous LSP/qLSP were set inside encode_sid_frame).
+                self.signal_buffer.copy_within(L_FRAME.., 0);
+                self.weighted_input_signal.copy_within(L_FRAME.., 0);
+                self.excitation_vector.copy_within(L_FRAME.., 0);
+
+                return;
+            }
+        }
+
         *bit_stream_length = 10;
 
         // LSP Quantization
@@ -400,6 +520,27 @@ impl EncoderChannelContext {
         // Convert array of parameters into bitStream
         parameters_array_2_bit_stream(&parameters, bit_stream);
     }
+
+    /// Return the RFC3389 comfort noise payload for the last CN frame generated
+    /// by this encoder (11 bytes: 1 energy byte + 10 reflection coefficient bytes).
+    ///
+    /// Returns zeros when VAD/DTX is disabled.
+    pub fn rfc3389_payload(&self) -> [u8; 11] {
+        let mut payload = [0u8; 11];
+        if let Some(dtx) = &self.dtx_channel_context {
+            /* decodedLogEnergy is the frame mean energy, range [-12,66[ */
+            payload[0] = (90 - dtx.decoded_log_energy() as i32) as u8;
+            let reflection_coefficients = dtx.reflection_coefficients();
+            for i in 0..NB_LSP_COEFF {
+                /* Ni = (ki in Q15)/258 + 127, 127 is 1/258 in Q15 */
+                payload[i + 1] = add16(
+                    shr(mult16_32_q15(127, -reflection_coefficients[i]), 16) as Word16,
+                    127,
+                ) as u8;
+            }
+        }
+        payload
+    }
 }
 
 pub struct Encoder {
@@ -421,5 +562,9 @@ impl Encoder {
     ) {
         self.context
             .encode(input_frame, bit_stream, bit_stream_length);
+    }
+
+    pub fn rfc3389_payload(&self) -> [u8; 11] {
+        self.context.rfc3389_payload()
     }
 }

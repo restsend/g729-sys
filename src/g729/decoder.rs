@@ -162,7 +162,7 @@ pub fn bcg729_decoder(
             decoder_channel_context.previous_frame_is_active_flag,
             bit_stream,
             bit_stream_length,
-            &mut decoder_channel_context.excitation_vector[L_PAST_EXCITATION..],
+            &mut decoder_channel_context.excitation_vector,
             &mut decoder_channel_context.previous_q_lsp,
             &mut lp,
             &mut decoder_channel_context.cng_pseudo_random_seed,

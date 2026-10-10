@@ -62,8 +62,8 @@ pub fn noise_lsp_quantization(
             weights[i] = usaturate(
                 add32(
                     pshr(
-                        mult16_16(
-                            mult16_16_q13(weights_threshold[i], weights_threshold[i]) as Word16,
+                        mult32_16(
+                            mult16_16_q13(weights_threshold[i], weights_threshold[i]),
                             10,
                         ),
                         2,
@@ -123,17 +123,15 @@ pub fn noise_lsp_quantization(
             let mut acc: Word32 = 0;
             for j in 0..NB_LSP_COEFF / 2 {
                 /* commented code : compute in the same way of the ITU code: ignore the denonimator and minimize (wi - w^[i])/(1-SumMAPred[i]) instead of (wi - w^[i]) square sum */
-                let diff_target_vector_l1_l2 = saturate(
-                    mult16_16_q15(
-                        sub32(
-                            sub32(
-                                target_vector[j] as Word32,
-                                L1[L1_SUBSET_INDEX[l1_index[l0]]][j] as Word32,
-                            ),
-                            L2L3[L2_SUBSET_INDEX[i]][j] as Word32,
-                        ) as Word16,
-                        NOISE_MA_PREDICTOR_SUM[l0][j],
+                let diff32 = sub32(
+                    sub32(
+                        target_vector[j] as Word32,
+                        L1[L1_SUBSET_INDEX[l1_index[l0]]][j] as Word32,
                     ),
+                    L2L3[L2_SUBSET_INDEX[i]][j] as Word32,
+                );
+                let diff_target_vector_l1_l2 = saturate(
+                    mult32_16_q15(diff32, NOISE_MA_PREDICTOR_SUM[l0][j]),
                     MAX_16 as Word32,
                 ) as Word16; /* targetVector, L1 and L2L3 in Q13 -> result in Q13 */
                 acc = mac16_16(
@@ -144,17 +142,15 @@ pub fn noise_lsp_quantization(
             }
 
             for j in NB_LSP_COEFF / 2..NB_LSP_COEFF {
-                let diff_target_vector_l1_l3 = saturate(
-                    mult16_16_q15(
-                        sub32(
-                            sub32(
-                                target_vector[j] as Word32,
-                                L1[L1_SUBSET_INDEX[l1_index[l0]]][j] as Word32,
-                            ),
-                            L2L3[L3_SUBSET_INDEX[i]][j] as Word32,
-                        ) as Word16,
-                        NOISE_MA_PREDICTOR_SUM[l0][j],
+                let diff32 = sub32(
+                    sub32(
+                        target_vector[j] as Word32,
+                        L1[L1_SUBSET_INDEX[l1_index[l0]]][j] as Word32,
                     ),
+                    L2L3[L3_SUBSET_INDEX[i]][j] as Word32,
+                );
+                let diff_target_vector_l1_l3 = saturate(
+                    mult32_16_q15(diff32, NOISE_MA_PREDICTOR_SUM[l0][j]),
                     MAX_16 as Word32,
                 ) as Word16; /* targetVector, L1 and L2L3 in Q13 -> result in Q13 */
                 acc = mac16_16(
@@ -180,7 +176,8 @@ pub fn noise_lsp_quantization(
         }
         for i in NB_LSP_COEFF / 2..NB_LSP_COEFF {
             quantized_vector[i] = add16(
-                L1[L1_SUBSET_INDEX[l1_index[l0]]][i],
+                // bcg729 uses the raw L1 index here (not L1SubsetIndex).
+                L1[l1_index[l0]][i],
                 L2L3[L3_SUBSET_INDEX[l2_index[l0]]][i],
             );
         }
@@ -238,10 +235,8 @@ pub fn noise_lsp_quantization(
             weighted_mean_square_error[l0] = umac16_16(
                 weighted_mean_square_error[l0],
                 diff_target_vector_quantized_vector,
-                mult16_16_q11(
-                    diff_target_vector_quantized_vector as Word16,
-                    weights[i] as Word16,
-                ) as UWord16,
+                (((diff_target_vector_quantized_vector as i64 * weights[i] as i64) >> 11) as u32)
+                    as UWord16,
             ); /* weights in Q11, diff in Q13 */
         }
     }
@@ -370,8 +365,8 @@ pub fn lsp_quantization(
             weights[i] = usaturate(
                 add32(
                     pshr(
-                        mult16_16(
-                            mult16_16_q13(weights_threshold[i], weights_threshold[i]) as Word16,
+                        mult32_16(
+                            mult16_16_q13(weights_threshold[i], weights_threshold[i]),
                             10,
                         ),
                         2,
@@ -428,14 +423,12 @@ pub fn lsp_quantization(
             let mut acc: Word32 = 0;
             for j in 0..NB_LSP_COEFF / 2 {
                 /* commented code : compute in the same way of the ITU code: ignore the denonimator and minimize (wi - w^[i])/(1-SumMAPred[i]) instead of (wi - w^[i]) square sum */
+                let diff32 = sub32(
+                    sub32(target_vector[j] as Word32, L1[l1_index[l0]][j] as Word32),
+                    L2L3[i][j] as Word32,
+                );
                 let diff_target_vector_l1_l2 = saturate(
-                    mult16_16_q15(
-                        sub32(
-                            sub32(target_vector[j] as Word32, L1[l1_index[l0]][j] as Word32),
-                            L2L3[i][j] as Word32,
-                        ) as Word16,
-                        MA_PREDICTOR_SUM[l0][j],
-                    ),
+                    mult32_16_q15(diff32, MA_PREDICTOR_SUM[l0][j]),
                     MAX_16 as Word32,
                 ) as Word16; /* targetVector, L1 and L2L3 in Q13 -> result in Q13 */
                 acc = mac16_16(
@@ -459,14 +452,12 @@ pub fn lsp_quantization(
             let mut acc: Word32 = 0;
             for j in NB_LSP_COEFF / 2..NB_LSP_COEFF {
                 /* commented code : compute in the same way of the ITU code: ignore the denonimator and minimize (wi - w^[i])/(1-SumMAPred[i]) instead of (wi - w^[i]) square sum */
+                let diff32 = sub32(
+                    sub32(target_vector[j] as Word32, L1[l1_index[l0]][j] as Word32),
+                    L2L3[i][j] as Word32,
+                );
                 let diff_target_vector_l1_l3 = saturate(
-                    mult16_16_q15(
-                        sub32(
-                            sub32(target_vector[j] as Word32, L1[l1_index[l0]][j] as Word32),
-                            L2L3[i][j] as Word32,
-                        ) as Word16,
-                        MA_PREDICTOR_SUM[l0][j],
-                    ),
+                    mult32_16_q15(diff32, MA_PREDICTOR_SUM[l0][j]),
                     MAX_16 as Word32,
                 ) as Word16; /* targetVector, L1 and L2L3 in Q13 -> result in Q13 */
                 acc = mac16_16(
@@ -544,10 +535,8 @@ pub fn lsp_quantization(
             weighted_mean_square_error[l0] = umac16_16(
                 weighted_mean_square_error[l0],
                 diff_target_vector_quantized_vector,
-                mult16_16_q11(
-                    diff_target_vector_quantized_vector as Word16,
-                    weights[i] as Word16,
-                ) as UWord16,
+                (((diff_target_vector_quantized_vector as i64 * weights[i] as i64) >> 11) as u32)
+                    as UWord16,
             ); /* weights in Q11, diff in Q13 */
         }
     }

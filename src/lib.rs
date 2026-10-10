@@ -24,7 +24,15 @@ impl Encoder {
 
     /// Encode one 80-sample frame into the caller-provided buffer.
     ///
-    /// Returns the number of bytes written to `out` (always `<= VOICE_FRAME_BYTES`).
+    /// Returns the number of bytes written to `out`:
+    /// * `VOICE_FRAME_BYTES` (10) for an active voice frame,
+    /// * `2` for a transmitted SID (silence) frame, or
+    /// * `0` when the frame is not transmitted at all (DTX).
+    ///
+    /// The last two cases only occur when the encoder was created with
+    /// `Encoder::new(true)` (Annex B VAD/DTX enabled); with VAD disabled the
+    /// return value is always 10.
+    ///
     /// This method is always available, including in `no_std`.
     pub fn encode_into(
         &mut self,
@@ -38,6 +46,9 @@ impl Encoder {
 
     /// Encode one 80-sample frame into a fresh `Vec<u8>`.
     ///
+    /// The returned vector is empty for an untransmitted DTX frame; see
+    /// [`Encoder::encode_into`] for the possible lengths.
+    ///
     /// Only available with the `std` feature (enabled by default).
     #[cfg(feature = "std")]
     pub fn encode(&mut self, input_80_samples: &[i16; FRAME_SAMPLES]) -> Vec<u8> {
@@ -46,9 +57,13 @@ impl Encoder {
         out[..len as usize].to_vec()
     }
 
+    /// Return the comfort noise payload for the last encoded CN (SID) frame,
+    /// formatted as 11 RFC3389 parameters (1 energy byte + 10 reflection
+    /// coefficient bytes, with filter order 10).
+    ///
+    /// Returns all zeros when VAD/DTX is disabled.
     pub fn rfc3389_payload(&mut self) -> [u8; 11] {
-        // Not implemented in Rust backend yet, return zeros or implement if needed
-        [0u8; 11]
+        self.inner.rfc3389_payload()
     }
 }
 
@@ -71,6 +86,16 @@ impl Decoder {
         }
     }
 
+    /// Decode one G.729 frame (80 PCM samples).
+    ///
+    /// * `payload` – the received bitstream (10 bytes for a voice frame, 2 bytes
+    ///   for a G.729 SID frame, empty for an untransmitted/lost frame).
+    /// * `frame_erased` – set when the frame was lost/corrupted.
+    /// * `is_sid` – set for silence frames: a 2-byte SID frame or a missing
+    ///   frame while in DTX (empty payload). When set, the decoder generates
+    ///   comfort noise (Annex B CNG) instead of voice.
+    /// * `rfc3389` – set when `payload` carries an RFC3389 comfort noise payload
+    ///   (energy byte + reflection coefficients) rather than a standard SID.
     pub fn decode(
         &mut self,
         payload: &[u8],

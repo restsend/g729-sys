@@ -1,6 +1,6 @@
 use crate::g729::basic_operations::*;
 use crate::g729::ld8k::*;
-use crate::g729::utils::{dot_product, vec_mult_16_16};
+use crate::g729::utils::{count_leading_zeros, dot_product, vec_mult_16_16};
 
 /// Compute a diagonal of Phi values: start from Phi(39,j) and step Phi(38, j-1) down to Phi(39-j, 0)
 /// Phi(i,j) = Phi(i+1,j+1) + h(39-i)*h(39-j)
@@ -74,8 +74,9 @@ fn compute_impulse_response_correlation_matrix(
 
     // check for possible overflow: Phi will be summed 10 times, so max Phi (by construction Phi[0][0]*2 is the max of Phi-> 2*Phi[0][0]*10 must be < 0x7fff ffff -> Phi[0][0]< 0x06666666 - otherwise scale Phi)
     if phi[0][0] > 0x6666666 {
-        // complement 0xccccccc adding 0x3333333 to shift by one when max(2*Phi[0][0]) is in 0x0fffffff < max < 0xcccccc
-        phi_scaling = (3 - ((phi[0][0] << 1) + 0x3333333).leading_zeros()) as u16;
+        // bcg729 countLeadingZeros excludes the sign bit.
+        let scaled = (phi[0][0].wrapping_shl(1)).wrapping_add(0x3333333);
+        phi_scaling = (3 - count_leading_zeros(scaled) as i32) as u16;
         for i in 0..L_SUBFRAME {
             phi[i][i] = shr(phi[i][i], phi_scaling as u32);
         }
@@ -195,10 +196,7 @@ pub fn fixed_codebook_search(
     }
 
     // normalise on 13 bits
-    // C uses a custom countLeadingZeros which excludes the sign bit.
-    // Rust leading_zeros() includes the sign bit (which is 0 here since correlation_signal_max is abs).
-    // So C_norm = Rust_norm - 1.
-    let correlation_signal_max_norm = correlation_signal_max.leading_zeros().saturating_sub(1);
+    let correlation_signal_max_norm = count_leading_zeros(correlation_signal_max) as u32;
 
     if correlation_signal_max_norm < 18 {
         // if it doesn't already fit on 13 bits

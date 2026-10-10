@@ -18,7 +18,7 @@ pub fn init_decode_adaptative_code_vector(previous_int_pitch_delay: &mut i16) {
 /*      -(i/o) intPitchDelay : the integer part of Pitch Delay.              */
 /*                                                                           */
 /*****************************************************************************/
-fn compute_adaptative_codebook_vector(
+pub fn compute_adaptative_codebook_vector(
     excitation_vector: &mut [Word16],
     mut frac_pitch_delay: i16,
     int_pitch_delay: i16,
