@@ -11,15 +11,13 @@ use crate::g729::ld8k::*;
 /*                                                                           */
 /*****************************************************************************/
 pub fn interpolate_q_lsp(
-    previous_q_lsp: &[Word16],
-    current_q_lsp: &[Word16],
-    interpolated_q_lsp: &mut [Word16],
+    previous_q_lsp: &[i16],
+    current_q_lsp: &[i16],
+    interpolated_q_lsp: &mut [i16],
 ) {
     /* interpolate previous and current qLSP according to spec. 3.2.5 : interpolated = (current+previous)/2 */
     for i in 0..NB_LSP_COEFF {
-        interpolated_q_lsp[i] = pshr(
-            add32(previous_q_lsp[i] as Word32, current_q_lsp[i] as Word32),
-            1,
-        ) as Word16;
+        interpolated_q_lsp[i] =
+            pshr(add32(previous_q_lsp[i] as i32, current_q_lsp[i] as i32), 1) as i16;
     }
 }

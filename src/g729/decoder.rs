@@ -13,27 +13,27 @@ use crate::g729::q_lsp_2_lp::q_lsp_2_lp;
 use crate::g729::utils::*;
 
 /* buffers allocation */
-static PREVIOUS_Q_LSP_INITIAL_VALUES: [Word16; NB_LSP_COEFF] = [
+static PREVIOUS_Q_LSP_INITIAL_VALUES: [i16; NB_LSP_COEFF] = [
     30000, 26000, 21000, 15000, 8000, 0, -8000, -15000, -21000, -26000,
 ]; /* in Q0.15 the initials values for the previous qLSP buffer */
 
 pub struct DecoderChannelContext {
     /*** buffers used in decoder bloc ***/
-    pub previous_q_lsp: [Word16; NB_LSP_COEFF], /* previous quantised LSP in Q0.15 */
-    pub excitation_vector: [Word16; L_PAST_EXCITATION + L_FRAME], /* in Q0 this vector contains:
-                                                0->153 : the past excitation vector.(length is Max Pitch Delay: 144 + interpolation window size : 10)
-                                                154-> 154+L_FRAME-1 : the current frame adaptative Code Vector first used to compute then the excitation vector */
-    pub bounded_adaptative_codebook_gain: Word16, /* the pitch gain from last subframe bounded in range [0.2,0.8] in Q0.14 */
-    pub adaptative_codebook_gain: Word16, /* the gains needs to be stored in case of frame erasure in Q14 */
-    pub fixed_codebook_gain: Word16,      /* in Q14.1 */
-    pub reconstructed_speech: [Word16; NB_LSP_COEFF + L_FRAME], /* in Q0, output of the LP synthesis filter, the first 10 words store the previous frame output */
+    pub previous_q_lsp: [i16; NB_LSP_COEFF], /* previous quantised LSP in Q0.15 */
+    pub excitation_vector: [i16; L_PAST_EXCITATION + L_FRAME], /* in Q0 this vector contains:
+                                             0->153 : the past excitation vector.(length is Max Pitch Delay: 144 + interpolation window size : 10)
+                                             154-> 154+L_FRAME-1 : the current frame adaptative Code Vector first used to compute then the excitation vector */
+    pub bounded_adaptative_codebook_gain: i16, /* the pitch gain from last subframe bounded in range [0.2,0.8] in Q0.14 */
+    pub adaptative_codebook_gain: i16, /* the gains needs to be stored in case of frame erasure in Q14 */
+    pub fixed_codebook_gain: i16,      /* in Q14.1 */
+    pub reconstructed_speech: [i16; NB_LSP_COEFF + L_FRAME], /* in Q0, output of the LP synthesis filter, the first 10 words store the previous frame output */
     pub pseudo_random_seed: u16, /* seed used in the pseudo random number generator */
     pub cng_pseudo_random_seed: u16, /* seed used in the pseudo random number generator for CNG */
 
     /*** buffers used in decodeLSP bloc ***/
-    pub last_q_lsf: [Word16; NB_LSP_COEFF], /* this buffer stores the last qLSF to be used in case of frame lost in Q2.13 */
+    pub last_q_lsf: [i16; NB_LSP_COEFF], /* this buffer stores the last qLSF to be used in case of frame lost in Q2.13 */
     /* buffer to store the last 4 frames codewords, used to compute the current qLSF */
-    pub previous_l_code_word: [[Word16; NB_LSP_COEFF]; MA_MAX_K], /* in Q2.13, buffer to store the last 4 frames codewords, used to compute the current qLSF */
+    pub previous_l_code_word: [[i16; NB_LSP_COEFF]; MA_MAX_K], /* in Q2.13, buffer to store the last 4 frames codewords, used to compute the current qLSF */
     /* the values stored are the codewords computed from the codebooks and rearranged */
     pub last_valid_l0: u16, /* this one store the L0 of last valid frame to be used in case of frame erased */
 
@@ -41,20 +41,20 @@ pub struct DecoderChannelContext {
     pub previous_int_pitch_delay: i16, /* store the last valid Integer Pitch Delay computed, used in case of parity error or frame erased */
 
     /*** buffer used in decodeGains bloc ***/
-    pub previous_gain_prediction_error: [Word16; 4], /* the last four gain prediction error U(m) eq69 and eq72, spec3.9.1 in Q10*/
+    pub previous_gain_prediction_error: [i16; 4], /* the last four gain prediction error U(m) eq69 and eq72, spec3.9.1 in Q10*/
 
     /*** buffers used in postFilter bloc ***/
-    pub residual_signal_buffer: [Word16; MAXIMUM_INT_PITCH_DELAY + L_FRAME], /* store the residual signal (current subframe and MAXIMUM_INT_PITCH_DELAY of previous values) in Q0 */
-    pub scaled_residual_signal_buffer: [Word16; MAXIMUM_INT_PITCH_DELAY + L_FRAME], /* same as previous but in Q-2 */
-    pub long_term_filtered_residual_signal_buffer: [Word16; 1 + L_SUBFRAME], /* the output of long term filter in Q0, need 1 word from previous subframe for tilt compensation filter */
-    pub short_term_filtered_residual_signal_buffer: [Word16; NB_LSP_COEFF + L_SUBFRAME], /* the output of short term filter(synthesis filter) in Q0, need NB_LSP_COEFF word from previous subframe as filter memory */
-    pub previous_adaptative_gain: Word16, /* previous gain for adaptative gain control */
+    pub residual_signal_buffer: [i16; MAXIMUM_INT_PITCH_DELAY + L_FRAME], /* store the residual signal (current subframe and MAXIMUM_INT_PITCH_DELAY of previous values) in Q0 */
+    pub scaled_residual_signal_buffer: [i16; MAXIMUM_INT_PITCH_DELAY + L_FRAME], /* same as previous but in Q-2 */
+    pub long_term_filtered_residual_signal_buffer: [i16; 1 + L_SUBFRAME], /* the output of long term filter in Q0, need 1 word from previous subframe for tilt compensation filter */
+    pub short_term_filtered_residual_signal_buffer: [i16; NB_LSP_COEFF + L_SUBFRAME], /* the output of short term filter(synthesis filter) in Q0, need NB_LSP_COEFF word from previous subframe as filter memory */
+    pub previous_adaptative_gain: i16, /* previous gain for adaptative gain control */
 
     /*** buffers used in postProcessing bloc ***/
-    pub input_x0: Word16,
-    pub input_x1: Word16,
-    pub output_y2: Word32,
-    pub output_y1: Word32,
+    pub input_x0: i16,
+    pub input_x1: i16,
+    pub output_y2: i32,
+    pub output_y1: i32,
 
     /* SID frame management */
     pub cng_channel_context: CngChannelContext, /* store informations specific to CNG */
@@ -62,7 +62,17 @@ pub struct DecoderChannelContext {
 }
 
 pub fn init_bcg729_decoder_channel() -> DecoderChannelContext {
-    let mut ctx = DecoderChannelContext {
+    let (previous_l_code_word, last_valid_l0, last_q_lsf) = init_decode_lsp();
+    let (
+        residual_signal_buffer,
+        scaled_residual_signal_buffer,
+        long_term_filtered_residual_signal_buffer,
+        short_term_filtered_residual_signal_buffer,
+        previous_adaptative_gain,
+    ) = init_post_filter();
+    let (output_y2, output_y1, input_x0, input_x1) = init_post_processing();
+
+    DecoderChannelContext {
         previous_q_lsp: PREVIOUS_Q_LSP_INITIAL_VALUES,
         excitation_vector: [0; L_PAST_EXCITATION + L_FRAME],
         bounded_adaptative_codebook_gain: BOUNDED_PITCH_GAIN_MIN,
@@ -71,46 +81,23 @@ pub fn init_bcg729_decoder_channel() -> DecoderChannelContext {
         reconstructed_speech: [0; NB_LSP_COEFF + L_FRAME],
         pseudo_random_seed: 21845,
         cng_pseudo_random_seed: CNG_DTX_RANDOM_SEED_INIT,
-        last_q_lsf: [0; NB_LSP_COEFF],
-        previous_l_code_word: [[0; NB_LSP_COEFF]; MA_MAX_K],
-        last_valid_l0: 0,
-        previous_int_pitch_delay: 0,
-        previous_gain_prediction_error: [0; 4],
-        residual_signal_buffer: [0; MAXIMUM_INT_PITCH_DELAY + L_FRAME],
-        scaled_residual_signal_buffer: [0; MAXIMUM_INT_PITCH_DELAY + L_FRAME],
-        long_term_filtered_residual_signal_buffer: [0; 1 + L_SUBFRAME],
-        short_term_filtered_residual_signal_buffer: [0; NB_LSP_COEFF + L_SUBFRAME],
-        previous_adaptative_gain: 0,
-        input_x0: 0,
-        input_x1: 0,
-        output_y2: 0,
-        output_y1: 0,
+        last_q_lsf,
+        previous_l_code_word,
+        last_valid_l0,
+        previous_int_pitch_delay: init_decode_adaptative_code_vector(),
+        previous_gain_prediction_error: init_decode_gains(),
+        residual_signal_buffer,
+        scaled_residual_signal_buffer,
+        long_term_filtered_residual_signal_buffer,
+        short_term_filtered_residual_signal_buffer,
+        previous_adaptative_gain,
+        input_x0,
+        input_x1,
+        output_y2,
+        output_y1,
         cng_channel_context: init_bcg729_cng_channel(),
         previous_frame_is_active_flag: 1,
-    };
-
-    init_decode_lsp(
-        &mut ctx.previous_l_code_word,
-        &mut ctx.last_valid_l0,
-        &mut ctx.last_q_lsf,
-    );
-    init_decode_adaptative_code_vector(&mut ctx.previous_int_pitch_delay);
-    init_decode_gains(&mut ctx.previous_gain_prediction_error);
-    init_post_filter(
-        &mut ctx.residual_signal_buffer,
-        &mut ctx.scaled_residual_signal_buffer,
-        &mut ctx.long_term_filtered_residual_signal_buffer,
-        &mut ctx.short_term_filtered_residual_signal_buffer,
-        &mut ctx.previous_adaptative_gain,
-    );
-    init_post_processing(
-        &mut ctx.output_y2,
-        &mut ctx.output_y1,
-        &mut ctx.input_x0,
-        &mut ctx.input_x1,
-    );
-
-    ctx
+    }
 }
 
 pub fn bcg729_decoder(
@@ -120,18 +107,17 @@ pub fn bcg729_decoder(
     frame_erasure_flag: u8,
     mut sid_frame_flag: u8,
     rfc3389_payload_flag: u8,
-    signal: &mut [Word16],
+    signal: &mut [i16],
 ) {
-    let mut parameters = [0 as u16; NB_PARAMETERS];
+    let mut parameters = [0_u16; NB_PARAMETERS];
     /* internal buffers which we do not need to keep between calls */
-    let mut q_lsp = [0 as Word16; NB_LSP_COEFF]; /* store the qLSP coefficients in Q0.15 */
-    let mut interpolated_q_lsp = [0 as Word16; NB_LSP_COEFF]; /* store the interpolated qLSP coefficient in Q0.15 */
-    let mut lp = [0 as Word16; 2 * NB_LSP_COEFF]; /* store the 2 sets of LP coefficients in Q12 */
+    let mut q_lsp = [0_i16; NB_LSP_COEFF]; /* store the qLSP coefficients in Q0.15 */
+    let mut interpolated_q_lsp = [0_i16; NB_LSP_COEFF]; /* store the interpolated qLSP coefficient in Q0.15 */
+    let mut lp = [0_i16; 2 * NB_LSP_COEFF]; /* store the 2 sets of LP coefficients in Q12 */
     let mut int_pitch_delay: i16 = 0; /* store the Pitch Delay in and out of decodeAdaptativeCodeVector, in for decodeFixedCodeVector */
-    let mut fixed_codebook_vector = [0 as Word16; L_SUBFRAME]; /* the fixed Codebook Vector in Q1.13*/
-    let mut post_filtered_signal = [0 as Word16; L_SUBFRAME]; /* store the postfiltered signal in Q0 */
+    let mut fixed_codebook_vector = [0_i16; L_SUBFRAME]; /* the fixed Codebook Vector in Q1.13*/
+    let mut post_filtered_signal = [0_i16; L_SUBFRAME]; /* store the postfiltered signal in Q0 */
 
-    let parity_error_flag: u8;
     let mut parameters_index = 4; /* this is used to select the right parameter according to the subframe currently computed, start pointing to P1 */
     let mut lp_coefficients_index = 0; /* this is used to select the right LP Coefficients according to the subframe currently computed */
 
@@ -141,9 +127,7 @@ pub fn bcg729_decoder(
             parameters_bit_stream_2_array(bs, &mut parameters);
         }
     } else {
-        for i in 0..NB_PARAMETERS {
-            parameters[i] = 0;
-        }
+        parameters[..NB_PARAMETERS].fill(0);
     }
 
     /* manage frameErasure and CNG as specified in B.27 */
@@ -209,9 +193,8 @@ pub fn bcg729_decoder(
             );
 
             /* copy postProcessing Output to the signal output buffer */
-            for i in 0..L_SUBFRAME {
-                signal[subframe_index + i] = post_filtered_signal[i];
-            }
+            signal[subframe_index..subframe_index + L_SUBFRAME]
+                .copy_from_slice(&post_filtered_signal[..L_SUBFRAME]);
 
             /* increase LPCoefficient Indexes */
             lp_coefficients_index += NB_LSP_COEFF;
@@ -256,9 +239,9 @@ pub fn bcg729_decoder(
         &mut interpolated_q_lsp,
     );
     /* copy the currentqLSP to previousqLSP buffer */
-    for i in 0..NB_LSP_COEFF {
-        decoder_channel_context.previous_q_lsp[i] = q_lsp[i];
-    }
+    decoder_channel_context
+        .previous_q_lsp
+        .copy_from_slice(&q_lsp);
 
     /* call the qLSP2LP function for first subframe */
     q_lsp_2_lp(&interpolated_q_lsp, &mut lp[0..NB_LSP_COEFF]);
@@ -266,7 +249,7 @@ pub fn bcg729_decoder(
     q_lsp_2_lp(&q_lsp, &mut lp[NB_LSP_COEFF..]);
 
     /* check the parity on the adaptativeCodebookIndexSubframe1(P1) with the received one (P0)*/
-    parity_error_flag = (compute_parity(parameters[4]) ^ parameters[5]) as u8;
+    let parity_error_flag: u8 = (compute_parity(parameters[4]) ^ parameters[5]) as u8;
 
     /* loop over the two subframes */
     for subframe_index in (0..L_FRAME).step_by(L_SUBFRAME) {
@@ -320,39 +303,32 @@ pub fn bcg729_decoder(
         parameters_index += 2;
 
         /* update bounded Adaptative Codebook Gain (in Q14) according to eq47 */
-        decoder_channel_context.bounded_adaptative_codebook_gain =
-            decoder_channel_context.adaptative_codebook_gain;
-        if decoder_channel_context.bounded_adaptative_codebook_gain > BOUNDED_PITCH_GAIN_MAX {
-            decoder_channel_context.bounded_adaptative_codebook_gain = BOUNDED_PITCH_GAIN_MAX;
-        }
-        if decoder_channel_context.bounded_adaptative_codebook_gain < BOUNDED_PITCH_GAIN_MIN {
-            decoder_channel_context.bounded_adaptative_codebook_gain = BOUNDED_PITCH_GAIN_MIN;
-        }
+        decoder_channel_context.bounded_adaptative_codebook_gain = decoder_channel_context
+            .adaptative_codebook_gain
+            .clamp(BOUNDED_PITCH_GAIN_MIN, BOUNDED_PITCH_GAIN_MAX);
 
         /* compute excitation vector according to eq75 */
         /* excitationVector = adaptative Codebook Vector * adaptativeCodebookGain + fixed Codebook Vector * fixedCodebookGain */
         /* the adaptative Codebook Vector is in the excitationVector buffer [L_PAST_EXCITATION + subframeIndex] */
         /* with adaptative Codebook Vector in Q0, adaptativeCodebookGain in Q14, fixed Codebook Vector in Q1.13 and fixedCodebookGain in Q14.1 -> result in Q14 on 32 bits */
         /* -> shift right 14 bits and store the value in Q0 in a 16 bits type */
-        for i in 0..L_SUBFRAME {
-            decoder_channel_context.excitation_vector[L_PAST_EXCITATION + subframe_index + i] =
-                saturate(
-                    pshr(
-                        add32(
-                            mult16_16(
-                                decoder_channel_context.excitation_vector
-                                    [L_PAST_EXCITATION + subframe_index + i],
-                                decoder_channel_context.adaptative_codebook_gain,
-                            ),
-                            mult16_16(
-                                fixed_codebook_vector[i],
-                                decoder_channel_context.fixed_codebook_gain,
-                            ),
-                        ),
-                        14,
+        let adaptative_gain = decoder_channel_context.adaptative_codebook_gain;
+        let fixed_gain = decoder_channel_context.fixed_codebook_gain;
+        for (i, sample) in decoder_channel_context.excitation_vector
+            [L_PAST_EXCITATION + subframe_index..L_PAST_EXCITATION + subframe_index + L_SUBFRAME]
+            .iter_mut()
+            .enumerate()
+        {
+            *sample = saturate(
+                pshr(
+                    add32(
+                        mult16_16(*sample, adaptative_gain),
+                        mult16_16(fixed_codebook_vector[i], fixed_gain),
                     ),
-                    MAX_INT16 as Word32,
-                ) as Word16;
+                    14,
+                ),
+                MAX_INT16 as i32,
+            ) as i16;
         }
 
         /* reconstruct speech using LP synthesis filter spec 4.1.6 eq77 */
@@ -390,9 +366,8 @@ pub fn bcg729_decoder(
         );
 
         /* copy postProcessing Output to the signal output buffer */
-        for i in 0..L_SUBFRAME {
-            signal[subframe_index + i] = post_filtered_signal[i];
-        }
+        signal[subframe_index..subframe_index + L_SUBFRAME]
+            .copy_from_slice(&post_filtered_signal[..L_SUBFRAME]);
 
         /* increase LPCoefficient Indexes */
         lp_coefficients_index += NB_LSP_COEFF;

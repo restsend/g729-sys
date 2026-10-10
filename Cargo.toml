@@ -1,6 +1,6 @@
 [package]
 name = "g729-sys"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 authors = ["jinti<shenjindi@fourz.cn>"]
 description = "Rust implementation of G.729 codec (no_std compatible)"
@@ -18,6 +18,19 @@ crate-type = ["rlib"]
 [features]
 default = ["std"]
 std = []
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+# Idioms being progressively adopted (see the refactor stages).
+needless_range_loop = "warn"
+manual_memcpy = "warn"
+needless_late_init = "warn"
+implicit_saturating_sub = "warn"
+manual_clamp = "warn"
+# Unsafe hygiene for the SIMD correlation kernels.
+undocumented_unsafe_blocks = "warn"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

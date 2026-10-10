@@ -2,17 +2,17 @@ use crate::g729::basic_operations::*;
 use crate::g729::ld8k::*;
 
 /* coefficients a stored in Q1.12 for A1 (the only one having a float value > 1) and Q0.12 for all the others */
-const A1: Word16 = 7807;
-const A2: Word16 = -3733;
-const B0: Word16 = 1899;
-const B1: Word16 = -3798;
-const B2: Word16 = 1899;
+const A1: i16 = 7807;
+const A2: i16 = -3733;
+const B0: i16 = 1899;
+const B1: i16 = -3798;
+const B2: i16 = 1899;
 
 pub struct PreProcessingState {
-    output_y2: Word32,
-    output_y1: Word32,
-    input_x0: Word16,
-    input_x1: Word16,
+    output_y2: i32,
+    output_y1: i32,
+    input_x0: i16,
+    input_x1: i16,
 }
 
 impl PreProcessingState {
@@ -25,9 +25,9 @@ impl PreProcessingState {
         }
     }
 
-    pub fn pre_processing(&mut self, signal: &[Word16], pre_processed_signal: &mut [Word16]) {
-        let mut input_x2: Word16;
-        let mut acc: Word32;
+    pub fn pre_processing(&mut self, signal: &[i16], pre_processed_signal: &mut [i16]) {
+        let mut input_x2: i16;
+        let mut acc: i32;
 
         for i in 0..L_FRAME {
             input_x2 = self.input_x1;
@@ -43,7 +43,7 @@ impl PreProcessingState {
 
             acc = saturate(acc, MAXINT28);
 
-            pre_processed_signal[i] = pshr(acc, 12) as Word16;
+            pre_processed_signal[i] = pshr(acc, 12) as i16;
             self.output_y2 = self.output_y1;
             self.output_y1 = acc;
         }

@@ -13,14 +13,14 @@ use crate::g729::ld8k::*;
 /*****************************************************************************/
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn lp_synthesis_filter(
-    excitation_vector: &[Word16],
-    lp_coefficients: &[Word16],
-    reconstructed_speech: &mut [Word16],
+    excitation_vector: &[i16],
+    lp_coefficients: &[i16],
+    reconstructed_speech: &mut [i16],
 ) {
     /* compute excitationVector[i] - Sum0-9(LPCoefficients[j]*reconstructedSpeech[i-j]) */
-    for i in 0..L_SUBFRAME {
+    for (i, &excitation) in excitation_vector.iter().enumerate().take(L_SUBFRAME) {
         let base = NB_LSP_COEFF + i;
-        let mut acc = sshl(excitation_vector[i] as Word32, 12); /* acc get the first term of the sum, in Q12 (excitationVector is in Q0)*/
+        let mut acc = sshl(excitation as i32, 12); /* acc get the first term of the sum, in Q12 (excitationVector is in Q0)*/
         // Unrolled 10-tap MAC (same order as j=0..9: highest history index first).
         acc = msu16_16(acc, lp_coefficients[0], reconstructed_speech[base - 1]);
         acc = msu16_16(acc, lp_coefficients[1], reconstructed_speech[base - 2]);
@@ -32,7 +32,7 @@ pub fn lp_synthesis_filter(
         acc = msu16_16(acc, lp_coefficients[7], reconstructed_speech[base - 8]);
         acc = msu16_16(acc, lp_coefficients[8], reconstructed_speech[base - 9]);
         acc = msu16_16(acc, lp_coefficients[9], reconstructed_speech[base - 10]);
-        reconstructed_speech[base] = saturate(pshr(acc, 12), MAX_16 as Word32) as Word16;
+        reconstructed_speech[base] = saturate(pshr(acc, 12), MAX_16 as i32) as i16;
         /* shift right acc to get it back in Q0 and check overflow on 16 bits */
     }
 }

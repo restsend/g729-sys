@@ -3,8 +3,8 @@ use crate::g729::codebooks::B30;
 use crate::g729::ld8k::*;
 
 /* init function */
-pub fn init_decode_adaptative_code_vector(previous_int_pitch_delay: &mut i16) {
-    *previous_int_pitch_delay = 60;
+pub fn init_decode_adaptative_code_vector() -> i16 {
+    60
 }
 
 /*****************************************************************************/
@@ -19,7 +19,7 @@ pub fn init_decode_adaptative_code_vector(previous_int_pitch_delay: &mut i16) {
 /*                                                                           */
 /*****************************************************************************/
 pub fn compute_adaptative_codebook_vector(
-    excitation_vector: &mut [Word16],
+    excitation_vector: &mut [i16],
     mut frac_pitch_delay: i16,
     int_pitch_delay: i16,
     current_subframe_offset: usize,
@@ -57,7 +57,7 @@ pub fn compute_adaptative_codebook_vector(
         let b301_idx = frac_pitch_delay as usize;
         let b302_idx = (3 - frac_pitch_delay) as usize;
 
-        let mut acc: Word32 = 0; /* in Q15 */
+        let mut acc: i32 = 0; /* in Q15 */
         let mut j = 0;
         for i in 0..10 {
             // acc = MAC16_16(acc, excitationVectorNMinusK[-i], b301[j]); /*  Note : the spec says: u(n−k+i)b30(t+3i) but the ITU code do (and here too) u(n-k-i )b30(t+3i) */
@@ -76,7 +76,7 @@ pub fn compute_adaptative_codebook_vector(
         }
         // excitationVector[n] = SATURATE(PSHR(acc, 15), MAXINT16); /* acc in Q15, shift/round to unscaled value and check overflow on 16 bits */
         excitation_vector[current_subframe_offset + n] =
-            saturate(pshr(acc, 15), MAX_INT16 as Word32) as Word16;
+            saturate(pshr(acc, 15), MAX_INT16 as i32) as i16;
     }
 }
 
@@ -104,7 +104,7 @@ pub fn decode_adaptative_code_vector(
     parity_flag: u8,
     frame_erasure_flag: u8,
     int_pitch_delay: &mut i16,
-    excitation_vector: &mut [Word16],
+    excitation_vector: &mut [i16],
 ) {
     let frac_pitch_delay: i16;
 
@@ -126,15 +126,14 @@ pub fn decode_adaptative_code_vector(
             if adaptative_codebook_index < 197 {
                 /* *intPitchDelay = (P1 + 2 )/ 3 + 19 */
                 *int_pitch_delay = add16(
-                    mult16_16_q15(add16(adaptative_codebook_index as i16, 2), 10923 as Word16)
-                        as Word16,
+                    mult16_16_q15(add16(adaptative_codebook_index as i16, 2), 10923_i16) as i16,
                     19,
                 ); /* MULT in Q15: 1/3 in Q15: 10923 */
                 /* fracPitchDelay = P1 − 3*intPitchDelay  + 58 : fracPitchDelay in -1, 0, 1 */
                 frac_pitch_delay = add16(
                     sub16(
                         adaptative_codebook_index as i16,
-                        mult16_16(*int_pitch_delay, 3) as Word16,
+                        mult16_16(*int_pitch_delay, 3) as i16,
                     ),
                     58,
                 );
@@ -160,24 +159,17 @@ pub fn decode_adaptative_code_vector(
             }
         } else {
             /* frameErasure flags are off, do the normal computation (doc 4.1.3) */
-            let mut t_min = sub16(*int_pitch_delay, 5); /* intPitchDelay contains the intPitch computed for subframe one */
-            if t_min < 20 {
-                t_min = 20;
-            }
-            if t_min > 134 {
-                t_min = 134;
-            }
+            let t_min = sub16(*int_pitch_delay, 5).clamp(20, 134); /* intPitchDelay contains the intPitch computed for subframe one */
             /* intPitchDelay = (P2 + 2 )/ 3 − 1 */
             *int_pitch_delay = sub16(
-                mult16_16_q15(add16(adaptative_codebook_index as i16, 2), 10923 as Word16)
-                    as Word16,
+                mult16_16_q15(add16(adaptative_codebook_index as i16, 2), 10923_i16) as i16,
                 1,
             );
             /* fracPitchDelay = P2 − 2 − 3((P 2 + 2 )/ 3 − 1) */
             frac_pitch_delay = sub16(
                 sub16(
                     adaptative_codebook_index as i16,
-                    mult16_16(*int_pitch_delay, 3) as Word16,
+                    mult16_16(*int_pitch_delay, 3) as i16,
                 ),
                 2,
             );

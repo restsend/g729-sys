@@ -11,23 +11,23 @@ const NOISE: u8 = 0;
 
 /// VAD state; kept inline (no heap) so it works in `no_std`.
 pub struct VadChannelContext {
-    ef_buffer: [Word16; N0],
+    ef_buffer: [i16; N0],
     frame_count: usize,
     update_count: u32,
     nb_valid_init_frame: u32,
-    init_ef_sum: Word32,
-    init_zc_sum: Word32,
-    init_lsf_sum: [Word32; NB_LSP_COEFF],
-    mean_ef: Word16,
-    mean_el: Word16,
-    mean_zc: Word16,
-    mean_lsf: [Word16; NB_LSP_COEFF],
+    init_ef_sum: i32,
+    init_zc_sum: i32,
+    init_lsf_sum: [i32; NB_LSP_COEFF],
+    mean_ef: i16,
+    mean_el: i16,
+    mean_zc: i16,
+    mean_lsf: [i16; NB_LSP_COEFF],
     svd_m1: u8,
     svd_m2: u8,
     count_inert: u8,
     second_stage_vad_smoothing_flag: u8,
     smoothing_counter: u8,
-    previous_frame_ef: Word16,
+    previous_frame_ef: i16,
     noise_continuity_counter: u8,
 }
 
@@ -64,10 +64,10 @@ impl VadChannelContext {
 
 /// Annex B multi-boundary initial decision (B3.5).
 fn multi_boundary_initial_voice_activity_decision(
-    delta_s: Word32,
-    delta_ef: Word16,
-    delta_el: Word16,
-    delta_zc: Word16,
+    delta_s: i32,
+    delta_ef: i16,
+    delta_el: i16,
+    delta_zc: i16,
 ) -> u8 {
     let delta_ef32 = mult16_16(10, delta_ef); // Q11
     let delta_el32 = mult16_16(10, delta_el); // Q11
@@ -126,18 +126,13 @@ fn multi_boundary_initial_voice_activity_decision(
 /// (the decision accesses indices `[-1, L_FRAME[`).
 pub fn bcg729_vad(
     ctx: &mut VadChannelContext,
-    reflection_coefficient: Word32,
-    lsf_coefficients: &[Word16; NB_LSP_COEFF],
-    auto_correlation_coefficients: &[Word32],
+    reflection_coefficient: i32,
+    lsf_coefficients: &[i16; NB_LSP_COEFF],
+    auto_correlation_coefficients: &[i32],
     auto_correlation_coefficients_scale: i8,
-    signal_current_frame: &[Word16],
+    signal_current_frame: &[i16],
 ) -> u8 {
-    let ef: Word16;
-    let emin: Word16;
-    let el: Word16;
-    let zc: Word16;
-    let delta_s: Word32;
-    let mut acc: Word32;
+    let mut acc: i32;
     let mut ivd: u8;
 
     // Full-band energy Ef/10 (B3.1), Q11.
@@ -147,7 +142,7 @@ pub fn bcg729_vad(
     );
     acc = shr32(sub32(acc, LOG2_240_Q16), 1);
     acc = mult16_32_q15(INV_LOG2_10_Q15, acc);
-    ef = pshr(acc, 4) as Word16;
+    let ef: i16 = pshr(acc, 4) as i16;
 
     ctx.ef_buffer[ctx.frame_count % N0] = ef;
 
@@ -165,25 +160,24 @@ pub fn bcg729_vad(
     );
     acc = shr32(sub32(acc, LOG2_240_Q16), 1);
     acc = mult16_32_q15(INV_LOG2_10_Q15, acc);
-    el = pshr(acc, 4) as Word16;
+    let el: i16 = pshr(acc, 4) as i16;
 
     // Zero-crossing rate, Q15 (1/80 per crossing).
-    let mut zc_acc: Word16 = 0;
+    let mut zc_acc: i16 = 0;
     for i in 0..L_FRAME {
         if mult16_16(signal_current_frame[i], signal_current_frame[i + 1]) < 0 {
             zc_acc = add16(zc_acc, 410);
         }
     }
-    zc = zc_acc;
+    let zc: i16 = zc_acc;
 
     // B3.2: initialisation of the background-noise running averages.
     if ctx.frame_count == NI {
         if ctx.nb_valid_init_frame > 0 {
-            let mean_en = div32(ctx.init_ef_sum, ctx.nb_valid_init_frame as i32) as Word16;
-            ctx.mean_zc = div32(ctx.init_zc_sum, ctx.nb_valid_init_frame as i32) as Word16;
+            let mean_en = div32(ctx.init_ef_sum, ctx.nb_valid_init_frame as i32) as i16;
+            ctx.mean_zc = div32(ctx.init_zc_sum, ctx.nb_valid_init_frame as i32) as i16;
             for i in 0..NB_LSP_COEFF {
-                ctx.mean_lsf[i] =
-                    div32(ctx.init_lsf_sum[i], ctx.nb_valid_init_frame as i32) as Word16;
+                ctx.mean_lsf[i] = div32(ctx.init_lsf_sum[i], ctx.nb_valid_init_frame as i32) as i16;
             }
             ctx.mean_ef = sub16(mean_en, 2048);
             ctx.mean_el = sub16(mean_en, 2458);
@@ -198,10 +192,10 @@ pub fn bcg729_vad(
         } else {
             ivd = VOICE;
             ctx.nb_valid_init_frame += 1;
-            ctx.init_ef_sum = add32(ctx.init_ef_sum, ef as Word32);
-            ctx.init_zc_sum = add32(ctx.init_zc_sum, zc as Word32);
-            for i in 0..NB_LSP_COEFF {
-                ctx.init_lsf_sum[i] = add32(ctx.init_lsf_sum[i], lsf_coefficients[i] as Word32);
+            ctx.init_ef_sum = add32(ctx.init_ef_sum, ef as i32);
+            ctx.init_zc_sum = add32(ctx.init_zc_sum, zc as i32);
+            for (sum, &lsf) in ctx.init_lsf_sum.iter_mut().zip(lsf_coefficients.iter()) {
+                *sum = add32(*sum, lsf as i32);
             }
         }
 
@@ -213,15 +207,15 @@ pub fn bcg729_vad(
         return ivd;
     }
 
-    emin = get_min_in_array(&ctx.ef_buffer, N0); // B3.3
+    let emin: i16 = get_min_in_array(&ctx.ef_buffer); // B3.3
 
     // B3.4: spectral distortion and energy/zero-crossing deviations.
-    let mut delta_s_acc: Word32 = 0;
-    for i in 0..NB_LSP_COEFF {
-        let acc16 = sub16(lsf_coefficients[i], ctx.mean_lsf[i]);
+    let mut delta_s_acc: i32 = 0;
+    for (&lsf, &mean) in lsf_coefficients.iter().zip(ctx.mean_lsf.iter()) {
+        let acc16 = sub16(lsf, mean);
         delta_s_acc = mac16_16_q13(delta_s_acc, acc16, acc16);
     }
-    delta_s = delta_s_acc;
+    let delta_s: i32 = delta_s_acc;
 
     let delta_ef = sub16(ctx.mean_ef, ef);
     let delta_el = sub16(ctx.mean_el, el);
@@ -330,21 +324,21 @@ pub fn bcg729_vad(
         }
 
         ctx.mean_ef = add16(
-            mult16_16_q15(ctx.mean_ef, beta_e) as Word16,
-            mult16_16_q15(ef, beta_e_complement) as Word16,
+            mult16_16_q15(ctx.mean_ef, beta_e) as i16,
+            mult16_16_q15(ef, beta_e_complement) as i16,
         );
         ctx.mean_el = add16(
-            mult16_16_q15(ctx.mean_el, beta_e) as Word16,
-            mult16_16_q15(el, beta_e_complement) as Word16,
+            mult16_16_q15(ctx.mean_el, beta_e) as i16,
+            mult16_16_q15(el, beta_e_complement) as i16,
         );
         ctx.mean_zc = add16(
-            mult16_16_q15(ctx.mean_zc, beta_zc) as Word16,
-            mult16_16_q15(zc, beta_zc_complement) as Word16,
+            mult16_16_q15(ctx.mean_zc, beta_zc) as i16,
+            mult16_16_q15(zc, beta_zc_complement) as i16,
         );
-        for i in 0..NB_LSP_COEFF {
-            ctx.mean_lsf[i] = add16(
-                mult16_16_q15(ctx.mean_lsf[i], beta_lsf) as Word16,
-                mult16_16_q15(lsf_coefficients[i], beta_lsf_complement) as Word16,
+        for (mean, &lsf) in ctx.mean_lsf.iter_mut().zip(lsf_coefficients.iter()) {
+            *mean = add16(
+                mult16_16_q15(*mean, beta_lsf) as i16,
+                mult16_16_q15(lsf, beta_lsf_complement) as i16,
             );
         }
     }

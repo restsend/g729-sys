@@ -17,13 +17,12 @@ use crate::g729::q_lsp_2_lp::q_lsp_2_lp;
 use crate::g729::utils::pseudo_random;
 
 pub struct CngChannelContext {
-    pub received_sid_gain: Word16,
-    pub smoothed_sid_gain: Word16,
-    pub q_lsp: [Word16; NB_LSP_COEFF],
-    pub last_frame_energy: Word64,
+    pub received_sid_gain: i16,
+    pub smoothed_sid_gain: i16,
+    pub q_lsp: [i16; NB_LSP_COEFF],
 }
 
-static SID_Q_LSP_INITIAL_VALUES: [Word16; NB_LSP_COEFF] = [
+static SID_Q_LSP_INITIAL_VALUES: [i16; NB_LSP_COEFF] = [
     31441, 27566, 21458, 13612, 4663, -4663, -13612, -21458, -27566, -31441,
 ];
 
@@ -32,7 +31,6 @@ pub fn init_bcg729_cng_channel() -> CngChannelContext {
         received_sid_gain: 0,
         smoothed_sid_gain: 0,
         q_lsp: SID_Q_LSP_INITIAL_VALUES,
-        last_frame_energy: 0,
     }
 }
 
@@ -41,21 +39,21 @@ pub fn init_bcg729_cng_channel() -> CngChannelContext {
 /// `excitation_vector` is the full buffer; the current frame starts at
 /// `L_PAST_EXCITATION`.
 pub fn compute_comfort_noise_excitation_vector(
-    target_gain: Word16,
+    target_gain: i16,
     random_generator_seed: &mut u16,
-    excitation_vector: &mut [Word16],
+    excitation_vector: &mut [i16],
 ) {
     for subframe_index in (0..L_FRAME).step_by(L_SUBFRAME) {
         let base = L_PAST_EXCITATION + subframe_index;
         let mut gaussian_random_excitation = [0i16; L_SUBFRAME];
-        let mut eg: Word32 = 0;
-        let mut gg: Word32;
-        let ga: Word16;
-        let mut ea: Word32 = 0;
-        let mut ei: Word32;
-        let k: Word32;
-        let mut gf: Word32;
-        let x2: Word32;
+        let mut eg: i32 = 0;
+        let mut gg: i32;
+
+        let mut ea: i32 = 0;
+        let mut ei: i32;
+
+        let mut gf: i32;
+
         let mut sign = [0i16; 4];
         let mut position = [0i16; 4];
         let mut delta_scale_factor: u8 = 0;
@@ -89,36 +87,28 @@ pub fn compute_comfort_noise_excitation_vector(
         random_number_buffer >>= 3;
         sign[3] = (random_number_buffer & 0x0001) as i16;
         // Adaptive gain Ga (eq B.22, max 0.5).
-        ga = ((pseudo_random(random_generator_seed) & 0x1fff) << 1) as Word16;
+        let ga: i16 = ((pseudo_random(random_generator_seed) & 0x1fff) << 1) as i16;
 
-        for i in 0..L_SUBFRAME {
-            let mut tmp_buffer: Word32 = 0;
+        for sample in gaussian_random_excitation.iter_mut() {
+            let mut tmp_buffer: i32 = 0;
             for _ in 0..12 {
                 tmp_buffer = add32(
                     tmp_buffer,
-                    pseudo_random(random_generator_seed) as Word16 as Word32,
+                    pseudo_random(random_generator_seed) as i16 as i32,
                 );
             }
-            gaussian_random_excitation[i] = shr32(tmp_buffer, 7) as Word16;
-            eg = mac16_16(
-                eg,
-                gaussian_random_excitation[i],
-                gaussian_random_excitation[i],
-            );
+            *sample = shr32(tmp_buffer, 7) as i16;
+            eg = mac16_16(eg, *sample, *sample);
         }
 
         gg = mult16_32_q15(GAUSSIAN_EXCITATION_COEFF_FACTOR, g729_inv_sqrt_q0q31(eg));
         gg = mult16_32_q15(target_gain, gg);
 
-        for i in 0..L_SUBFRAME {
-            if gaussian_random_excitation[i] < 0 {
-                gaussian_random_excitation[i] = (-saturate(
-                    pshr(mult16_32_q15(-gaussian_random_excitation[i], gg), 2),
-                    MAXINT16 as Word32,
-                )) as Word16;
+        for sample in gaussian_random_excitation.iter_mut() {
+            if *sample < 0 {
+                *sample = (-saturate(pshr(mult16_32_q15(-*sample, gg), 2), MAXINT16 as i32)) as i16;
             } else {
-                gaussian_random_excitation[i] =
-                    pshr(mult16_32_q15(gaussian_random_excitation[i], gg), 2) as Word16;
+                *sample = pshr(mult16_32_q15(*sample, gg), 2) as i16;
             }
         }
 
@@ -132,18 +122,18 @@ pub fn compute_comfort_noise_excitation_vector(
         for i in 0..L_SUBFRAME {
             excitation_vector[base + i] = saturate(
                 mult16_16_p15(excitation_vector[base + i], ga),
-                MAXINT16 as Word32,
-            ) as Word16;
+                MAXINT16 as i32,
+            ) as i16;
         }
 
         for i in 0..L_SUBFRAME {
             excitation_vector[base + i] = saturate(
                 add32(
-                    excitation_vector[base + i] as Word32,
-                    gaussian_random_excitation[i] as Word32,
+                    excitation_vector[base + i] as i32,
+                    gaussian_random_excitation[i] as i32,
                 ),
-                MAXINT16 as Word32,
-            ) as Word16;
+                MAXINT16 as i32,
+            ) as i16;
         }
 
         for i in 0..L_SUBFRAME {
@@ -153,15 +143,15 @@ pub fn compute_comfort_noise_excitation_vector(
         ei = 0;
         for i in 0..4 {
             if sign[i] == 0 {
-                ei = sub32(ei, excitation_vector[base + position[i] as usize] as Word32);
+                ei = sub32(ei, excitation_vector[base + position[i] as usize] as i32);
             } else {
-                ei = add32(ei, excitation_vector[base + position[i] as usize] as Word32);
+                ei = add32(ei, excitation_vector[base + position[i] as usize] as i32);
             }
         }
 
-        k = mult16_32(
+        let k: i32 = mult16_32(
             target_gain,
-            shr32(mult16_16(L_SUBFRAME as Word16, target_gain), 3),
+            shr32(mult16_16(L_SUBFRAME as i16, target_gain), 3),
         );
 
         // delta = Ei^2 + (K - 8*Ea)/2
@@ -170,16 +160,15 @@ pub fn compute_comfort_noise_excitation_vector(
 
         if delta < 0 {
             // Keep only the gaussian excitation.
-            for i in 0..L_SUBFRAME {
-                excitation_vector[base + i] = gaussian_random_excitation[i];
-            }
+            excitation_vector[base..base + L_SUBFRAME]
+                .copy_from_slice(&gaussian_random_excitation[..L_SUBFRAME]);
 
             ei = 0;
             for i in 0..4 {
                 if sign[i] == 0 {
-                    ei = sub32(ei, excitation_vector[base + position[i] as usize] as Word32);
+                    ei = sub32(ei, excitation_vector[base + position[i] as usize] as i32);
                 } else {
-                    ei = add32(ei, excitation_vector[base + position[i] as usize] as Word32);
+                    ei = add32(ei, excitation_vector[base + position[i] as usize] as i32);
                 }
             }
             delta = (ei as i64).wrapping_mul(ei as i64) + mult16_32_p15(COEFF_K, k) as i64;
@@ -200,7 +189,7 @@ pub fn compute_comfort_noise_excitation_vector(
 
         // Pick the root with the smaller absolute value.
         gf = sub32(delta, ei);
-        x2 = -add32(delta, ei);
+        let x2: i32 = -add32(delta, ei);
         if abs(x2) < abs(gf) {
             gf = x2;
         }
@@ -209,9 +198,9 @@ pub fn compute_comfort_noise_excitation_vector(
         for i in 0..4 {
             let idx = base + position[i] as usize;
             if sign[i] == 0 {
-                excitation_vector[idx] = sub32(excitation_vector[idx] as Word32, gf) as Word16;
+                excitation_vector[idx] = sub32(excitation_vector[idx] as i32, gf) as i16;
             } else {
-                excitation_vector[idx] = add32(excitation_vector[idx] as Word32, gf) as Word16;
+                excitation_vector[idx] = add32(excitation_vector[idx] as i32, gf) as i16;
             }
         }
     }
@@ -224,11 +213,11 @@ pub fn decode_sid_frame(
     previous_frame_is_active_flag: u8,
     bit_stream: Option<&[u8]>,
     bit_stream_length: u8,
-    excitation_vector: &mut [Word16],
-    previous_q_lsp: &mut [Word16; NB_LSP_COEFF],
-    lp: &mut [Word16],
+    excitation_vector: &mut [i16],
+    previous_q_lsp: &mut [i16; NB_LSP_COEFF],
+    lp: &mut [i16],
     pseudo_random_seed: &mut u16,
-    previous_l_code_word: &mut [[Word16; NB_LSP_COEFF]; MA_MAX_K],
+    previous_l_code_word: &mut [[i16; NB_LSP_COEFF]; MA_MAX_K],
     rfc3389_payload_flag: u8,
 ) {
     let mut interpolated_q_lsp = [0i16; NB_LSP_COEFF];
@@ -250,11 +239,11 @@ pub fn decode_sid_frame(
             if received_sid_gain_log > 66 {
                 received_sid_gain_log = 66;
             }
-            received_sid_gain_log = mult16_16(received_sid_gain_log as Word16, 680);
-            let received_sid_gain_energy = g729_exp2_q11q16(received_sid_gain_log as Word16);
+            received_sid_gain_log = mult16_16(received_sid_gain_log as i16, 680);
+            let received_sid_gain_energy = g729_exp2_q11q16(received_sid_gain_log as i16);
             if received_sid_gain_energy > 0 {
                 cng_channel_context.received_sid_gain =
-                    shr32(g729_sqrt_q0q7(received_sid_gain_energy as u32), 12) as Word16;
+                    shr32(g729_sqrt_q0q7(received_sid_gain_energy as u32), 12) as i16;
                 if cng_channel_context.received_sid_gain < SID_GAIN_CODEBOOK[0] {
                     cng_channel_context.received_sid_gain = SID_GAIN_CODEBOOK[0];
                 }
@@ -263,22 +252,24 @@ pub fn decode_sid_frame(
             }
 
             // Rebuild the reflection coefficients from the payload.
-            for i in 0..cn_filter_order {
+            for (i, k_i) in k.iter_mut().take(cn_filter_order).enumerate() {
                 let b = bit_stream.get(i + 1).copied().unwrap_or(0);
-                k[i] = mult16_16(add16(b as Word16, 127), 258) as Word16;
+                *k_i = mult16_16(add16(b as i16, 127), 258) as i16;
             }
-            for i in cn_filter_order..NB_LSP_COEFF {
-                k[i] = 0;
+            for k_i in k
+                .iter_mut()
+                .skip(cn_filter_order)
+                .take(NB_LSP_COEFF - cn_filter_order)
+            {
+                *k_i = 0;
             }
 
             // Rebuild the LP coefficients (G.711 Appendix II 5.2.1.3).
             lp_coefficients[0] = ONE_IN_Q27;
-            lp_coefficients[1] = -shl(k[0] as Word32, 12);
+            lp_coefficients[1] = -shl(k[0] as i32, 12);
             for i in 2..NB_LSP_COEFF + 1 {
-                for j in 1..i {
-                    previous_iteration_lp_coefficients[j] = lp_coefficients[j];
-                }
-                lp_coefficients[i] = -shl(k[i - 1] as Word32, 16);
+                previous_iteration_lp_coefficients[1..i].copy_from_slice(&lp_coefficients[1..i]);
+                lp_coefficients[i] = -shl(k[i - 1] as i32, 16);
                 for j in 1..i {
                     lp_coefficients[j] = mac32_32_q31(
                         lp_coefficients[j],
@@ -291,7 +282,7 @@ pub fn decode_sid_frame(
 
             for i in 0..NB_LSP_COEFF {
                 lp_coefficients_q12[i] =
-                    saturate(pshr(lp_coefficients[i + 1], 15), MAXINT16 as Word32) as Word16;
+                    saturate(pshr(lp_coefficients[i + 1], 15), MAXINT16 as i32) as i16;
             }
 
             if !lp2lsp_conversion(&lp_coefficients_q12, &mut cng_channel_context.q_lsp) {
@@ -329,8 +320,12 @@ pub fn decode_sid_frame(
                 &NOISE_MA_PREDICTOR_SUM,
             );
 
-            for i in 0..NB_LSP_COEFF {
-                cng_channel_context.q_lsp[i] = g729_cos_q13q15(current_q_lsf[i]);
+            for (q_lsp, &q_lsf) in cng_channel_context
+                .q_lsp
+                .iter_mut()
+                .zip(current_q_lsf.iter())
+            {
+                *q_lsp = g729_cos_q13q15(q_lsf);
             }
         }
     }

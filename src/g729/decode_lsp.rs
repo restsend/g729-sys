@@ -5,27 +5,18 @@ use crate::g729::ld8k::*;
 use crate::g729::utils::{insertion_sort, rearrange_coefficients};
 
 /* previous L Code Word initial values (Pi/11 steps) in Q2.13 */
-static PREVIOUS_L_CODE_WORD_INIT: [Word16; NB_LSP_COEFF] = [
+static PREVIOUS_L_CODE_WORD_INIT: [i16; NB_LSP_COEFF] = [
     2339, 4679, 7018, 9358, 11698, 14037, 16377, 18717, 21056, 23396,
 ];
 
-pub fn init_decode_lsp(
-    previous_l_code_word: &mut [[Word16; NB_LSP_COEFF]; MA_MAX_K],
-    last_valid_l0: &mut u16,
-    last_q_lsf: &mut [Word16; NB_LSP_COEFF],
-) {
-    /* init the previousLCodeWord buffer according to doc 3.2.4 -> pi/11 steps */
-    for i in 0..MA_MAX_K {
-        for j in 0..NB_LSP_COEFF {
-            previous_l_code_word[i][j] = PREVIOUS_L_CODE_WORD_INIT[j];
-        }
-    }
-
-    /* init the last valid values just to avoid problem in case the first frame is a lost one */
-    *last_valid_l0 = 0;
-    for j in 0..NB_LSP_COEFF {
-        last_q_lsf[j] = PREVIOUS_L_CODE_WORD_INIT[j];
-    }
+pub fn init_decode_lsp() -> ([[i16; NB_LSP_COEFF]; MA_MAX_K], u16, [i16; NB_LSP_COEFF]) {
+    /* init the previousLCodeWord buffer according to doc 3.2.4 -> pi/11 steps
+     * and the last valid values, so that the first frame can be a lost one */
+    (
+        [PREVIOUS_L_CODE_WORD_INIT; MA_MAX_K],
+        0,
+        PREVIOUS_L_CODE_WORD_INIT,
+    )
 }
 
 /*****************************************************************************/
@@ -39,13 +30,13 @@ pub fn init_decode_lsp(
 /*                                                                           */
 /*****************************************************************************/
 pub fn compute_q_lsf(
-    codebook_q_lsf: &mut [Word16; NB_LSP_COEFF],
-    previous_l_code_word: &mut [[Word16; NB_LSP_COEFF]; MA_MAX_K],
+    codebook_q_lsf: &mut [i16; NB_LSP_COEFF],
+    previous_l_code_word: &mut [[i16; NB_LSP_COEFF]; MA_MAX_K],
     l0: usize,
-    current_ma_predictor: &[[[Word16; NB_LSP_COEFF]; MA_MAX_K]; L0_RANGE],
-    current_ma_predictor_sum: &[[Word16; NB_LSP_COEFF]; L0_RANGE],
+    current_ma_predictor: &[[[i16; NB_LSP_COEFF]; MA_MAX_K]; L0_RANGE],
+    current_ma_predictor_sum: &[[i16; NB_LSP_COEFF]; L0_RANGE],
 ) {
-    let mut acc: Word32; /* Accumulator in Q2.28 */
+    let mut acc: i32; /* Accumulator in Q2.28 */
 
     /*** rearrange in order to have a minimum distance between two consecutives coefficients ***/
     rearrange_coefficients(codebook_q_lsf, GAP1);
@@ -74,7 +65,7 @@ pub fn compute_q_lsf(
             }
         }
         /* acc in Q2.28, shift back the acc to a Q2.13 with rounding */
-        codebook_q_lsf[i] = pshr(acc, 15) as Word16; /* codebookqLSF in Q2.13 */
+        codebook_q_lsf[i] = pshr(acc, 15) as i16; /* codebookqLSF in Q2.13 */
     }
     /* Note : codebookqLSF buffer now contains qLSF */
 
@@ -82,7 +73,7 @@ pub fn compute_q_lsf(
     /* qLSF in Q2.13 as are qLSF_MIN and qLSF_MAX and MIN_qLSF_DISTANCE */
 
     /* sort the codebookqLSF array */
-    insertion_sort(codebook_q_lsf, NB_LSP_COEFF);
+    insertion_sort(codebook_q_lsf);
 
     /* check for low limit on qLSF[0] */
     if codebook_q_lsf[0] < QLSF_MIN {
@@ -113,14 +104,14 @@ pub fn compute_q_lsf(
 /*                                                                           */
 /*****************************************************************************/
 pub fn decode_lsp(
-    previous_l_code_word: &mut [[Word16; NB_LSP_COEFF]; MA_MAX_K],
+    previous_l_code_word: &mut [[i16; NB_LSP_COEFF]; MA_MAX_K],
     last_valid_l0: &mut u16,
-    last_q_lsf: &mut [Word16; NB_LSP_COEFF],
+    last_q_lsf: &mut [i16; NB_LSP_COEFF],
     l: &[u16],
-    q_lsp: &mut [Word16; NB_LSP_COEFF],
+    q_lsp: &mut [i16; NB_LSP_COEFF],
     frame_erased: u8,
 ) {
-    let mut current_q_lsf = [0 as Word16; NB_LSP_COEFF]; /* buffer to the current qLSF in Q2.13 */
+    let mut current_q_lsf = [0_i16; NB_LSP_COEFF]; /* buffer to the current qLSF in Q2.13 */
 
     if frame_erased == 0 {
         /* frame is ok, proceed according to 3.2.4 section of the doc */
@@ -150,23 +141,19 @@ pub fn decode_lsp(
         ); /* use regular MAPredictor as this function is not called on SID frame decoding */
 
         /* backup the qLSF and L0 to restore them in case of frame erased */
-        for i in 0..NB_LSP_COEFF {
-            last_q_lsf[i] = current_q_lsf[i];
-        }
+        last_q_lsf.copy_from_slice(&current_q_lsf);
         *last_valid_l0 = l[0];
     } else {
         /* frame erased indicator is set, proceed according to section 4.4 of the specs */
-        let mut acc: Word32; /* acc in Q2.28 */
+        let mut acc: i32; /* acc in Q2.28 */
 
         /* restore the qLSF of last valid frame */
-        for i in 0..NB_LSP_COEFF {
-            current_q_lsf[i] = last_q_lsf[i];
-        }
+        current_q_lsf.copy_from_slice(last_q_lsf);
 
         /* compute back the codewords from the qLSF and store them in the previousLCodeWord buffer */
         for i in 0..NB_LSP_COEFF {
             /* currentqLSF and previousLCodeWord in Q2.13, MAPredictor in Q0.15 and invMAPredictorSum in Q3.12 */
-            acc = shl(last_q_lsf[i] as Word32, 15); /* Q2.13 -> Q2.28 */
+            acc = shl(last_q_lsf[i] as i32, 15); /* Q2.13 -> Q2.28 */
             for j in 0..MA_MAX_K {
                 acc = msu16_16(
                     acc,
@@ -182,7 +169,7 @@ pub fn decode_lsp(
                 if j > 0 {
                     previous_l_code_word[j][i] = previous_l_code_word[j - 1][i];
                 } else {
-                    previous_l_code_word[j][i] = pshr(acc, 15) as Word16;
+                    previous_l_code_word[j][i] = pshr(acc, 15) as i16;
                 }
             }
         }

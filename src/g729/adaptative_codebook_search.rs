@@ -12,7 +12,7 @@ use crate::g729::utils::{correlate_vectors, dot_product_16_32_q12};
 /// * `int_pitch_delay` - The integer pitch delay.
 /// * `frac_pitch_delay` - The fractional pitch delay (-1, 0, or 1).
 pub fn generate_adaptative_codebook_vector(
-    excitation_vector: &mut [Word16],
+    excitation_vector: &mut [i16],
     current_idx: usize,
     mut int_pitch_delay: i16,
     mut frac_pitch_delay: i16,
@@ -34,21 +34,19 @@ pub fn generate_adaptative_codebook_vector(
     let b30_dec = &B30[b30_decreased_idx..b30_decreased_idx + 28];
 
     for n in 0..L_SUBFRAME {
-        let mut acc: Word32 = 0; // acc in Q15
-                                 // delayedExcitationVector[n-i] == excitation_vector[delayed_idx + n - i]
-        let mut idx1 = delayed_idx + n;
-        let mut idx2 = delayed_idx + n + 1;
-        let mut j = 0;
-        for _ in 0..10 {
-            acc = mac16_16(acc, excitation_vector[idx1], b30_inc[j]);
-            acc = mac16_16(acc, excitation_vector[idx2], b30_dec[j]);
-            idx1 -= 1;
-            idx2 += 1;
-            j += 3;
+        let mut acc: i32 = 0; // acc in Q15
+                              // delayedExcitationVector[n-i] == excitation_vector[delayed_idx + n - i]
+        for (k, (&inc, &dec)) in b30_inc
+            .iter()
+            .step_by(3)
+            .zip(b30_dec.iter().step_by(3))
+            .enumerate()
+        {
+            acc = mac16_16(acc, excitation_vector[delayed_idx + n - k], inc);
+            acc = mac16_16(acc, excitation_vector[delayed_idx + n + 1 + k], dec);
         }
         // acc in Q15, shift/round to unscaled value and check overflow on 16 bits
-        excitation_vector[current_idx + n] =
-            saturate(pshr(acc, 15) as Word32, MAX_16 as Word32) as Word16;
+        excitation_vector[current_idx + n] = saturate(pshr(acc, 15), MAX_16 as i32) as i16;
     }
 }
 
@@ -67,21 +65,22 @@ pub fn generate_adaptative_codebook_vector(
 /// * `frac_pitch_delay` - Output fractional part of pitch delay.
 /// * `pitch_delay_codeword` - Output P1 or P2 codeword as in spec 3.7.2.
 /// * `sub_frame_index` - 0 for the first subframe, 40 for the second.
+#[allow(clippy::too_many_arguments)] // fixed-point kernel: each parameter has a distinct Q format
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn adaptative_codebook_search(
-    excitation_vector: &mut [Word16],
+    excitation_vector: &mut [i16],
     current_idx: usize,
     int_pitch_delay_min: &mut i16,
     int_pitch_delay_max: &mut i16,
-    impulse_response: &[Word16],
-    target_signal: &[Word16],
+    impulse_response: &[i16],
+    target_signal: &[i16],
     int_pitch_delay: &mut i16,
     frac_pitch_delay: &mut i16,
     pitch_delay_codeword: &mut u16,
     sub_frame_index: u16,
 ) {
-    let mut backward_filtered_target_signal = [0 as Word32; L_SUBFRAME];
-    let mut correlation_max: Word32 = Word32::MIN;
+    let mut backward_filtered_target_signal = [0_i32; L_SUBFRAME];
+    let mut correlation_max: i32 = i32::MIN;
 
     // compute the backward Filtered Target Signal as specified in A.3.7: correlation of target signal and impulse response
     // targetSignal in Q0, impulseResponse in Q12 -> backwardFilteredTargetSignal in Q12
@@ -113,7 +112,7 @@ pub fn adaptative_codebook_search(
     *frac_pitch_delay = 0;
     if !(sub_frame_index == 0 && *int_pitch_delay >= 85) {
         // compute the fracPitchDelay
-        let mut adaptative_codebook_vector_backup = [0 as Word16; L_SUBFRAME];
+        let mut adaptative_codebook_vector_backup = [0_i16; L_SUBFRAME];
 
         // search the fractionnal part to get the best correlation
         // we already have in excitationVector for fracPitchDelay = 0 the adaptativeCodebookVector (see specA.3.7)

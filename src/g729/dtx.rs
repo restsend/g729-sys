@@ -16,20 +16,20 @@ const UNTRANSMITTED_FRAME: u8 = 0;
 
 /// DTX state; kept inline (no heap) for `no_std`.
 pub struct DtxChannelContext {
-    autocorrelation_coefficients: [[Word32; NB_LSP_COEFF + 1]; 7],
+    autocorrelation_coefficients: [[i32; NB_LSP_COEFF + 1]; 7],
     autocorrelation_coefficients_scale: [i8; 7],
     previous_vad_flag: u8,
     pseudo_random_seed: u16,
-    previous_residual_energy: Word32,
+    previous_residual_energy: i32,
     previous_residual_energy_scale: i8,
-    sid_lp_coefficient_autocorrelation: [Word32; NB_LSP_COEFF + 1],
-    current_sid_gain: Word16,
+    sid_lp_coefficient_autocorrelation: [i32; NB_LSP_COEFF + 1],
+    current_sid_gain: i16,
     previous_decoded_log_energy: i8,
     decoded_log_energy: i8,
-    smoothed_sid_gain: Word16,
-    reflection_coefficients: [Word32; NB_LSP_COEFF],
+    smoothed_sid_gain: i16,
+    reflection_coefficients: [i32; NB_LSP_COEFF],
     count_fr: u8,
-    q_lsp_coefficients: [Word16; NB_LSP_COEFF],
+    q_lsp_coefficients: [i16; NB_LSP_COEFF],
 }
 
 impl Default for DtxChannelContext {
@@ -66,7 +66,7 @@ impl DtxChannelContext {
 
     /// Reflection coefficients (Q31) of the filter used for the last transmitted
     /// SID frame, used to build the RFC3389 payload.
-    pub fn reflection_coefficients(&self) -> &[Word32; NB_LSP_COEFF] {
+    pub fn reflection_coefficients(&self) -> &[i32; NB_LSP_COEFF] {
         &self.reflection_coefficients
     }
 
@@ -78,10 +78,10 @@ impl DtxChannelContext {
 
 /// Rescale and sum several autocorrelation vectors.
 fn sum_autocorrelation_coefficients(
-    autocorrelation_coefficients: &[[Word32; NB_LSP_COEFF + 1]],
+    autocorrelation_coefficients: &[[i32; NB_LSP_COEFF + 1]],
     autocorrelation_coefficients_scale: &[i8],
     nb_elements: usize,
-    auto_correlation_coefficients_result: &mut [Word32; NB_LSP_COEFF + 1],
+    auto_correlation_coefficients_result: &mut [i32; NB_LSP_COEFF + 1],
     autocorrelation_coefficients_scale_results: &mut i8,
 ) {
     let mut auto_correlation_sum_buffer = [0i64; NB_LSP_COEFF + 1];
@@ -90,9 +90,9 @@ fn sum_autocorrelation_coefficients(
     let mut right_shift_to_normalise: i8 = 0;
 
     let mut min_scale = autocorrelation_coefficients_scale[0];
-    for i in 1..nb_elements {
-        if autocorrelation_coefficients_scale[i] < min_scale {
-            min_scale = autocorrelation_coefficients_scale[i];
+    for &scale in &autocorrelation_coefficients_scale[1..nb_elements] {
+        if scale < min_scale {
+            min_scale = scale;
         }
     }
 
@@ -104,16 +104,17 @@ fn sum_autocorrelation_coefficients(
         }
     }
 
-    for i in 0..NB_LSP_COEFF + 1 {
-        auto_correlation_sum_buffer[i] = rescaled_autocorrelation_coefficients[0][i] as i64;
-        for j in 1..nb_elements {
-            auto_correlation_sum_buffer[i] = add64(
-                auto_correlation_sum_buffer[i],
-                rescaled_autocorrelation_coefficients[j][i] as i64,
-            );
+    for (i, sum) in auto_correlation_sum_buffer.iter_mut().enumerate() {
+        *sum = rescaled_autocorrelation_coefficients[0][i] as i64;
+        for row in rescaled_autocorrelation_coefficients
+            .iter()
+            .take(nb_elements)
+            .skip(1)
+        {
+            *sum = add64(*sum, row[i] as i64);
         }
-        if auto_correlation_sum_buffer[i].abs() > max {
-            max = auto_correlation_sum_buffer[i].abs();
+        if sum.abs() > max {
+            max = sum.abs();
         }
     }
 
@@ -129,11 +130,11 @@ fn sum_autocorrelation_coefficients(
             auto_correlation_coefficients_result[i] = shr64(
                 auto_correlation_sum_buffer[i],
                 right_shift_to_normalise as u32,
-            ) as Word32;
+            ) as i32;
         }
     } else {
         for i in 0..NB_LSP_COEFF + 1 {
-            auto_correlation_coefficients_result[i] = auto_correlation_sum_buffer[i] as Word32;
+            auto_correlation_coefficients_result[i] = auto_correlation_sum_buffer[i] as i32;
         }
     }
 
@@ -142,7 +143,7 @@ fn sum_autocorrelation_coefficients(
 
 /// Residual energy quantization (B4.2.1).
 fn residual_energy_quantization(
-    residual_energy: Word32,
+    residual_energy: i32,
     residual_energy_scale: i8,
     decoded_log_energy: &mut i8,
 ) -> u8 {
@@ -156,7 +157,7 @@ fn residual_energy_quantization(
 
     if acc < -26214 {
         *decoded_log_energy = -12;
-        return 0;
+        0
     } else if acc < 45875 {
         let mut acc = acc + 19661;
         if acc < 0 {
@@ -166,7 +167,7 @@ fn residual_energy_quantization(
         }
         let steps = shr32(acc, 15) as u8;
         *decoded_log_energy = (-2 + 4 * steps as i32) as i8;
-        return 1 + steps;
+        1 + steps
     } else if acc < 216268 {
         let mut acc = acc - 49152;
         if acc < 0 {
@@ -176,29 +177,25 @@ fn residual_energy_quantization(
         }
         let steps = shr32(acc, 15) as u8;
         *decoded_log_energy = (16 + 2 * steps as i32) as i8;
-        return 6 + steps;
+        6 + steps
     } else {
         *decoded_log_energy = 66;
-        return 31;
+        31
     }
 }
 
 /// LP coefficient autocorrelation (eq B.13).
 fn compute_lpc_coefficient_autocorrelation(
-    lp_coefficients: &[Word16; NB_LSP_COEFF],
-    lp_autocorrelation: &mut [Word32; NB_LSP_COEFF + 1],
+    lp_coefficients: &[i16; NB_LSP_COEFF],
+    lp_autocorrelation: &mut [i32; NB_LSP_COEFF + 1],
 ) {
-    lp_autocorrelation[0] = 4096 * 4096 >> 4;
-    for k in 0..NB_LSP_COEFF {
-        lp_autocorrelation[0] = mac16_16_q4(
-            lp_autocorrelation[0],
-            lp_coefficients[k],
-            lp_coefficients[k],
-        );
+    lp_autocorrelation[0] = (4096 * 4096) >> 4;
+    for &coefficient in lp_coefficients.iter() {
+        lp_autocorrelation[0] = mac16_16_q4(lp_autocorrelation[0], coefficient, coefficient);
     }
 
     for j in 1..NB_LSP_COEFF + 1 {
-        lp_autocorrelation[j] = shl(lp_coefficients[j - 1] as Word32, 9);
+        lp_autocorrelation[j] = shl(lp_coefficients[j - 1] as i32, 9);
         for k in 0..NB_LSP_COEFF - j {
             lp_autocorrelation[j] = mac16_16_q3(
                 lp_autocorrelation[j],
@@ -211,10 +208,10 @@ fn compute_lpc_coefficient_autocorrelation(
 
 /// Compare two LPC filters (eq B.12); returns 1 when they differ significantly.
 fn compare_lpc_filters(
-    lp_coefficients_autocorrelation: &[Word32; NB_LSP_COEFF + 1],
-    autocorrelation_coefficients: &[Word32; NB_LSP_COEFF + 1],
-    residual_energy: Word32,
-    threshold: Word32,
+    lp_coefficients_autocorrelation: &[i32; NB_LSP_COEFF + 1],
+    autocorrelation_coefficients: &[i32; NB_LSP_COEFF + 1],
+    residual_energy: i32,
+    threshold: i32,
 ) -> u8 {
     let mut acc: i64 = 0;
     for i in 0..NB_LSP_COEFF + 1 {
@@ -235,7 +232,7 @@ fn compare_lpc_filters(
 /// Save the current autocorrelation vector in the DTX context (B4.1.1).
 pub fn update_dtx_context(
     ctx: &mut DtxChannelContext,
-    autocorrelation_coefficients: &[Word32],
+    autocorrelation_coefficients: &[i32],
     autocorrelation_coefficients_scale: i8,
 ) {
     for i in (1..7).rev() {
@@ -252,12 +249,12 @@ pub fn update_dtx_context(
 #[allow(clippy::too_many_arguments)]
 pub fn encode_sid_frame(
     ctx: &mut DtxChannelContext,
-    previous_lsp_coefficients: &mut [Word16; NB_LSP_COEFF],
-    previous_q_lsp_coefficients: &mut [Word16; NB_LSP_COEFF],
+    previous_lsp_coefficients: &mut [i16; NB_LSP_COEFF],
+    previous_q_lsp_coefficients: &mut [i16; NB_LSP_COEFF],
     vad_flag: u8,
-    previous_q_lsf: &mut [[Word16; NB_LSP_COEFF]; MA_MAX_K],
-    excitation_vector: &mut [Word16],
-    q_lp_coefficients: &mut [Word16; 2 * NB_LSP_COEFF],
+    previous_q_lsf: &mut [[i16; NB_LSP_COEFF]; MA_MAX_K],
+    excitation_vector: &mut [i16],
+    q_lp_coefficients: &mut [i16; 2 * NB_LSP_COEFF],
     bit_stream: &mut [u8],
     bit_stream_length: &mut u8,
 ) {
@@ -266,7 +263,7 @@ pub fn encode_sid_frame(
     let mut lp_coefficients = [0i16; NB_LSP_COEFF];
     let mut lsp_coefficients = [0i16; NB_LSP_COEFF];
     let mut reflection_coefficients = [0i32; NB_LSP_COEFF];
-    let mut residual_energy: Word32 = 0;
+    let mut residual_energy: i32 = 0;
     let frame_type: u8;
     let quantized_residual_energy: u8;
     let mut decoded_log_energy: i8 = 0;
@@ -306,7 +303,7 @@ pub fn encode_sid_frame(
     } else {
         let mut flag_chang = 0;
 
-        let mean_energy: Word32;
+        let mean_energy: i32;
         let mean_energy_scale: i8;
         if summed_autocorrelation_coefficients_scale < ctx.previous_residual_energy_scale {
             mean_energy_scale = summed_autocorrelation_coefficients_scale;
@@ -367,7 +364,7 @@ pub fn encode_sid_frame(
         let mut sid_lp_autocorrelation_coefficients_scale: i8 = 0;
         let mut past_average_lp_coefficients = [0i16; NB_LSP_COEFF];
         let mut past_average_reflection_coefficients = [0i32; NB_LSP_COEFF];
-        let mut past_average_residual_energy: Word32 = 0;
+        let mut past_average_residual_energy: i32 = 0;
 
         ctx.count_fr = 0;
 
@@ -466,11 +463,10 @@ pub fn encode_sid_frame(
         *bit_stream_length = 2;
         // The reference packs the 2 MSB of L2 with "%0x03" (maps 3 to 0);
         // kept verbatim for bit-exactness.
-        bit_stream[0] = (((parameters[0] & 0x01) << 7)
+        bit_stream[0] = ((parameters[0] & 0x01) << 7)
             | ((parameters[1] & 0x1F) << 2)
-            | ((parameters[2] >> 2) % 0x03)) as u8;
-        bit_stream[1] =
-            (((parameters[2] & 0x03) << 6) | ((quantized_residual_energy & 0x1F) << 1)) as u8;
+            | ((parameters[2] >> 2) % 0x03);
+        bit_stream[1] = ((parameters[2] & 0x03) << 6) | ((quantized_residual_energy & 0x1F) << 1);
     } else {
         *bit_stream_length = 0;
     }

@@ -17,23 +17,15 @@ use crate::g729::ld8k::*;
 /*****************************************************************************/
 
 /* coefficients are stored in Q1.13 */
-const A1: Word16 = 15836;
-const A2: Word16 = -7667;
-const B0: Word16 = 7699;
-const B1: Word16 = -15398;
-const B2: Word16 = 7699;
+const A1: i16 = 15836;
+const A2: i16 = -7667;
+const B0: i16 = 7699;
+const B1: i16 = -15398;
+const B2: i16 = 7699;
 
 /* Initialization of context values */
-pub fn init_post_processing(
-    output_y2: &mut Word32,
-    output_y1: &mut Word32,
-    input_x0: &mut Word16,
-    input_x1: &mut Word16,
-) {
-    *output_y2 = 0;
-    *output_y1 = 0;
-    *input_x0 = 0;
-    *input_x1 = 0;
+pub fn init_post_processing() -> (i32, i32, i16, i16) {
+    (0, 0, 0, 0)
 }
 
 /*****************************************************************************/
@@ -47,19 +39,19 @@ pub fn init_post_processing(
 /*                                                                           */
 /*****************************************************************************/
 pub fn post_processing(
-    output_y2: &mut Word32,
-    output_y1: &mut Word32,
-    input_x0: &mut Word16,
-    input_x1: &mut Word16,
-    signal: &mut [Word16],
+    output_y2: &mut i32,
+    output_y1: &mut i32,
+    input_x0: &mut i16,
+    input_x1: &mut i16,
+    signal: &mut [i16],
 ) {
-    let mut input_x2: Word16;
-    let mut acc: Word32; /* in Q13 */
+    let mut input_x2: i16;
+    let mut acc: i32; /* in Q13 */
 
-    for i in 0..L_SUBFRAME {
+    for sample in signal.iter_mut().take(L_SUBFRAME) {
         input_x2 = *input_x1;
         *input_x1 = *input_x0;
-        *input_x0 = signal[i];
+        *input_x0 = *sample;
 
         /* compute with acc and coefficients in Q13 */
         acc = mult16_32_q13(A1, *output_y1); /* Y1 in Q14.13 * A1 in Q1.13 -> acc in Q17.13*/
@@ -69,7 +61,7 @@ pub fn post_processing(
         acc = mac16_16(acc, *input_x1, B1);
         acc = saturate(mac16_16(acc, input_x2, B2), MAX_INT29); /* saturate the acc to keep in Q15.13 */
 
-        signal[i] = saturate(pshr(acc, 12), MAX_INT16 as Word32) as Word16; /* acc in Q13 -> *2 and scale back to Q0 */
+        *sample = saturate(pshr(acc, 12), MAX_INT16 as i32) as i16; /* acc in Q13 -> *2 and scale back to Q0 */
         *output_y2 = *output_y1;
         *output_y1 = acc;
     }

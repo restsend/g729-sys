@@ -23,9 +23,9 @@ mod tests {
 
         // Generate a sine wave
         let mut input_frame = [0i16; L_FRAME];
-        for i in 0..L_FRAME {
-            let angle = i as f32 * 2.0 * 3.14159 * 440.0 / 8000.0;
-            input_frame[i] = (angle.sin() * 10000.0) as i16;
+        for (i, sample) in input_frame.iter_mut().enumerate() {
+            let angle = i as f32 * 2.0 * core::f32::consts::PI * 440.0 / 8000.0;
+            *sample = (angle.sin() * 10000.0) as i16;
         }
 
         // Encode multiple frames

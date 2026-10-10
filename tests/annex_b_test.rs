@@ -11,8 +11,10 @@ use g729_sys::{Decoder, Encoder, FRAME_SAMPLES};
 fn read_input_pcm() -> Vec<i16> {
     let bytes = std::fs::read("fixtures/en_8k_16bit.pcm").expect("read input pcm");
     bytes
-        .chunks_exact(2)
-        .map(|c| i16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| i16::from_le_bytes(*c))
         .collect()
 }
 
@@ -116,8 +118,10 @@ fn annex_b_decoder_bit_exact() {
     let refs = read_ref_enc();
     let ref_bytes = std::fs::read("fixtures/annex_b_ref_dec.pcm").expect("read ref dec");
     let ref_pcm: Vec<i16> = ref_bytes
-        .chunks_exact(2)
-        .map(|c| i16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| i16::from_le_bytes(*c))
         .collect();
 
     let mut decoder = Decoder::new();

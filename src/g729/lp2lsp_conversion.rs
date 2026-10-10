@@ -5,7 +5,7 @@ pub const NB_COMPUTED_VALUES_CHEBYSHEV_POLYNOMIAL: usize = 51;
 
 /* x = cos(w) with w in [0,Pi] in 50 steps */
 /* in Q15 */
-static COS_W0_PI: [Word16; NB_COMPUTED_VALUES_CHEBYSHEV_POLYNOMIAL] = [
+static COS_W0_PI: [i16; NB_COMPUTED_VALUES_CHEBYSHEV_POLYNOMIAL] = [
     32760, 32703, 32509, 32187, 31738, 31164, 30466, 29649, 28714, 27666, 26509, 25248, 23886,
     22431, 20887, 19260, 17557, 15786, 13951, 12062, 10125, 8149, 6140, 4106, 2057, 0, -2057,
     -4106, -6140, -8149, -10125, -12062, -13951, -15786, -17557, -19260, -20887, -22431, -23886,
@@ -22,11 +22,11 @@ static COS_W0_PI: [Word16; NB_COMPUTED_VALUES_CHEBYSHEV_POLYNOMIAL] = [
 /*      - result of polynomial function in Q15                               */
 /*                                                                           */
 /*****************************************************************************/
-fn chebyshev_polynomial(x: Word16, f: &[Word32]) -> Word32 {
+fn chebyshev_polynomial(x: i16, f: &[i32]) -> i32 {
     /* bk in Q15*/
-    let mut bk: Word32;
-    let mut bk1 = add32(shl(x as Word32, 1), f[1]); /* init: b4=2x+f1 */
-    let mut bk2 = ONE_IN_Q15 as Word32; /* init: b5=1 */
+    let mut bk: i32;
+    let mut bk1 = add32(shl(x as i32, 1), f[1]); /* init: b4=2x+f1 */
+    let mut bk2 = ONE_IN_Q15; /* init: b5=1 */
 
     for k in (1..=3).rev() {
         /* at the end of loop execution we have b1 in bk1 and b2 in bk2 */
@@ -48,28 +48,25 @@ fn chebyshev_polynomial(x: Word16, f: &[Word32]) -> Word32 {
 /*      - boolean: 1 if all roots found, 0 if unable to compute 10 roots     */
 /*                                                                           */
 /*****************************************************************************/
-pub fn lp2lsp_conversion(lp_coefficients: &[Word16], lsp_coefficients: &mut [Word16]) -> bool {
-    let mut f1 = [0 as Word32; 6];
-    let mut f2 = [0 as Word32; 6]; /* coefficients for polynomials F1 anf F2 in Q12 for computation, then converted in Q15 for the Chebyshev Polynomial function */
+pub fn lp2lsp_conversion(lp_coefficients: &[i16], lsp_coefficients: &mut [i16]) -> bool {
+    let mut f1 = [0_i32; 6];
+    let mut f2 = [0_i32; 6]; /* coefficients for polynomials F1 anf F2 in Q12 for computation, then converted in Q15 for the Chebyshev Polynomial function */
     let mut number_of_root_found = 0; /* used to check the final number of roots found and exit the loop on each polynomial computation when we have 10 roots */
-    let mut previous_cx: Word32;
-    let mut cx: Word32; /* value of Chebyshev Polynomial at current point in Q15 */
+    let mut previous_cx: i32;
+    let mut cx: i32; /* value of Chebyshev Polynomial at current point in Q15 */
 
     /*** Compute the polynomials coefficients according to spec 3.2.3 eq15 ***/
-    f1[0] = ONE_IN_Q12 as Word32; /* values 0 are not part of the output, they are just used for computation purpose */
-    f2[0] = ONE_IN_Q12 as Word32;
+    f1[0] = ONE_IN_Q12; /* values 0 are not part of the output, they are just used for computation purpose */
+    f2[0] = ONE_IN_Q12;
 
     for i in 0..5 {
         f1[i + 1] = add32(
-            lp_coefficients[i] as Word32,
-            sub32(lp_coefficients[9 - i] as Word32, f1[i]),
+            lp_coefficients[i] as i32,
+            sub32(lp_coefficients[9 - i] as i32, f1[i]),
         ); /* note: index on LPCoefficients are -1 respect to spec because the unused value 0 is not stored */
         f2[i + 1] = add32(
             f2[i],
-            sub32(
-                lp_coefficients[i] as Word32,
-                lp_coefficients[9 - i] as Word32,
-            ),
+            sub32(lp_coefficients[i] as i32, lp_coefficients[9 - i] as i32),
         ); /* note: index on LPCoefficients are -1 respect to spec because the unused value 0 is not stored */
     }
     /* convert the coefficients from Q12 to Q15 to be used by the Chebyshev Polynomial function (f1/2[0] aren't used so they are not converted) */
@@ -90,12 +87,11 @@ pub fn lp2lsp_conversion(lp_coefficients: &[Word16], lsp_coefficients: &mut [Wor
             /* divide 2 times the interval to find a more accurate root */
             let mut x_low = COS_W0_PI[i - 1];
             let mut x_high = COS_W0_PI[i];
-            let mut x_mean: Word16;
+            let mut x_mean: i16;
 
             for _j in 0..2 {
-                let middle_cx: Word32;
-                x_mean = shr(add32(x_low as Word32, x_high as Word32), 1) as Word16;
-                middle_cx = chebyshev_polynomial(x_mean, if use_f1 { &f1 } else { &f2 }); /* compute the polynome for the value in the middle of current interval */
+                x_mean = shr(add32(x_low as i32, x_high as i32), 1) as i16;
+                let middle_cx: i32 = chebyshev_polynomial(x_mean, if use_f1 { &f1 } else { &f2 }); /* compute the polynome for the value in the middle of current interval */
 
                 if ((previous_cx ^ middle_cx) & 0x10000000) != 0 {
                     /* check signe change by XOR on the value of first bit */
@@ -112,7 +108,7 @@ pub fn lp2lsp_conversion(lp_coefficients: &[Word16], lsp_coefficients: &mut [Wor
 
             /* linear interpolation for better root accuracy */
             /* xMean = xLow - (xHigh-xLow)* previousCx/(Cx-previousCx); */
-            let delta_x = sub32(x_high as Word32, x_low as Word32);
+            let delta_x = sub32(x_high as i32, x_low as i32);
             let interp = if previous_cx == cx {
                 /* avoid possible division by 0 */
                 mult32_32_q15(delta_x, if previous_cx > 0 { MAXINT32 } else { MININT32 })
@@ -129,7 +125,7 @@ pub fn lp2lsp_conversion(lp_coefficients: &[Word16], lsp_coefficients: &mut [Wor
                     ),
                 )
             };
-            x_mean = sub32(x_low as Word32, interp) as Word16;
+            x_mean = sub32(x_low as i32, interp) as i16;
 
             /* recompute previousCx with the new coefficients */
             previous_cx = chebyshev_polynomial(x_mean, if use_f1 { &f1 } else { &f2 });

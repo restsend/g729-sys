@@ -15,11 +15,10 @@ pub fn decode_fixed_code_vector(
     mut signs: u16,
     mut positions: u16,
     int_pitch_delay: i16,
-    bounded_pitch_gain: Word16,
-    fixed_codebook_vector: &mut [Word16],
+    bounded_pitch_gain: i16,
+    fixed_codebook_vector: &mut [i16],
 ) {
     let mut positions_array = [0u16; 4];
-    let jx: u16;
 
     /* get the positions into an array: mapping according to eq62 and table7 in spec 3.8 */
     positions_array[0] = (positions & 7) * 5; /* m0 = 5*C, do not use macro here as whatever fixed or floating point computation we use, these are integers */
@@ -28,14 +27,12 @@ pub fn decode_fixed_code_vector(
     positions = shr16(positions as i16, 3) as u16; /* shift right by 3 to get the 3 next bits(m2/5) as LSB */
     positions_array[2] = ((positions & 7) * 5) + 2; /* m2 = 5*C + 2, do not use macro here as whatever fixed or floating point computation we use, these are integers */
     positions = shr16(positions as i16, 3) as u16; /* shift right by 3 to get the last 4 bits(m3/5 and jx) as LSB */
-    jx = positions & 1; /* jx from eq62 is the last bit */
+    let jx: u16 = positions & 1; /* jx from eq62 is the last bit */
     positions = shr16(positions as i16, 1) as u16; /* shift right by 1 to get the last 3 bits as LSB */
     positions_array[3] = ((positions & 7) * 5) + 3 + jx; /* m3 = 5*C + 3 + jx, do not use macro here as whatever fixed or floating point computation we use, these are integers */
 
     /* initialise the output Vector */
-    for i in 0..L_SUBFRAME {
-        fixed_codebook_vector[i] = 0;
-    }
+    fixed_codebook_vector[..L_SUBFRAME].fill(0);
 
     /* get the signs and compute the fixedCodebookVector */
     for i in 0..4 {
@@ -56,7 +53,7 @@ pub fn decode_fixed_code_vector(
             mult16_16_p14(
                 fixed_codebook_vector[i - int_pitch_delay as usize],
                 bounded_pitch_gain,
-            ) as Word16,
+            ) as i16,
         );
     }
 }

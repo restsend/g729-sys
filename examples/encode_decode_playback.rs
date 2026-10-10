@@ -1,5 +1,4 @@
-use g729_sys::g729::decoder::Decoder;
-use g729_sys::g729::encoder::Encoder;
+use g729_sys::{Decoder, Encoder, FRAME_SAMPLES, VOICE_FRAME_BYTES};
 use std::fs::File;
 use std::io::{Read, Write};
 
@@ -14,48 +13,36 @@ fn main() -> std::io::Result<()> {
     let mut encoder = Encoder::new(false); // VAD disabled
     let mut decoder = Decoder::new();
 
-    let mut input_buffer = [0u8; 160]; // 80 samples * 2 bytes
-    let mut pcm_buffer = [0i16; 80];
-    let mut bit_stream = [0u8; 10]; // 10 bytes for G.729 frame
-    let mut bit_stream_length = 0u8;
-    let mut decoded_pcm = [0i16; 80];
-    let mut output_buffer = [0u8; 160];
+    let mut input_buffer = [0u8; FRAME_SAMPLES * 2]; // 80 samples * 2 bytes
+    let mut bit_stream = [0u8; VOICE_FRAME_BYTES]; // 10 bytes for a G.729 frame
+    let mut output_buffer = [0u8; FRAME_SAMPLES * 2];
 
     let mut frame_count = 0;
 
     loop {
         let bytes_read = input_file.read(&mut input_buffer)?;
-        if bytes_read < 160 {
+        if bytes_read < input_buffer.len() {
             break;
         }
 
-        // Convert bytes to i16 (Little Endian)
-        for i in 0..80 {
-            pcm_buffer[i] = i16::from_le_bytes([input_buffer[2 * i], input_buffer[2 * i + 1]]);
+        // Convert bytes to i16 (Little Endian).
+        let mut pcm_buffer = [0i16; FRAME_SAMPLES];
+        for (sample, chunk) in pcm_buffer.iter_mut().zip(input_buffer.as_chunks::<2>().0) {
+            *sample = i16::from_le_bytes(*chunk);
         }
 
-        // Encode
-        encoder.encode(&pcm_buffer, &mut bit_stream, &mut bit_stream_length);
+        // Encode, then decode the produced bitstream.
+        let len = encoder.encode_into(&pcm_buffer, &mut bit_stream) as usize;
+        let decoded_pcm = decoder.decode(&bit_stream[..len], false, false, false);
 
-        // Decode
-        // bit_stream is Option<&[u8]>
-        // frame_erasure_flag = 0
-        // sid_frame_flag = 0 (since VAD is disabled)
-        // rfc3389_payload_flag = 0
-        decoder.decode(
-            Some(&bit_stream),
-            bit_stream_length,
-            0,
-            0,
-            0,
-            &mut decoded_pcm,
-        );
-
-        // Convert i16 to bytes (Little Endian)
-        for i in 0..80 {
-            let bytes = decoded_pcm[i].to_le_bytes();
-            output_buffer[2 * i] = bytes[0];
-            output_buffer[2 * i + 1] = bytes[1];
+        // Convert i16 to bytes (Little Endian).
+        for (bytes, sample) in output_buffer
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
+            .zip(decoded_pcm.iter())
+        {
+            bytes.copy_from_slice(&sample.to_le_bytes());
         }
 
         output_file.write_all(&output_buffer)?;

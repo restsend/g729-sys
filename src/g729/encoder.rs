@@ -22,37 +22,42 @@ use crate::g729::vad::{bcg729_vad, VadChannelContext};
 pub struct EncoderChannelContext {
     /* buffers used in decoder bloc */
     /* Signal buffer mapping : 240 word16_t length */
-    pub signal_buffer: [Word16; L_LP_ANALYSIS_WINDOW],
+    pub signal_buffer: [i16; L_LP_ANALYSIS_WINDOW],
 
     // Indices for signal buffer
     // signalLastInputFrame index = L_LP_ANALYSIS_WINDOW - L_FRAME
     // signalCurrentFrame index = L_LP_ANALYSIS_WINDOW - L_SUBFRAME - L_FRAME
-    pub previous_lsp_coefficients: [Word16; NB_LSP_COEFF],
-    pub previous_q_lsp_coefficients: [Word16; NB_LSP_COEFF],
+    pub previous_lsp_coefficients: [i16; NB_LSP_COEFF],
+    pub previous_q_lsp_coefficients: [i16; NB_LSP_COEFF],
 
-    pub weighted_input_signal: [Word16; MAXIMUM_INT_PITCH_DELAY + L_FRAME],
-    pub excitation_vector: [Word16; L_PAST_EXCITATION + L_FRAME],
+    pub weighted_input_signal: [i16; MAXIMUM_INT_PITCH_DELAY + L_FRAME],
+    pub excitation_vector: [i16; L_PAST_EXCITATION + L_FRAME],
 
-    pub target_signal: [Word16; NB_LSP_COEFF + L_SUBFRAME],
+    pub target_signal: [i16; NB_LSP_COEFF + L_SUBFRAME],
 
-    pub last_quantized_adaptative_codebook_gain: Word16,
+    pub last_quantized_adaptative_codebook_gain: i16,
 
     /*** buffer used in preProcessing ***/
     pub pre_processing_state: PreProcessingState,
 
     /*** buffer used in LSPQuantization ***/
-    pub previous_q_lsf: [[Word16; NB_LSP_COEFF]; MA_MAX_K],
+    pub previous_q_lsf: [[i16; NB_LSP_COEFF]; MA_MAX_K],
 
     /*** buffer used in gainQuantization ***/
-    pub previous_gain_prediction_error: [Word16; 4],
+    pub previous_gain_prediction_error: [i16; 4],
 
     /*** Annex B (VAD/DTX) context, present only when enabled at construction ***/
-    pub enable_vad: bool,
-    pub vad_channel_context: Option<VadChannelContext>,
-    pub dtx_channel_context: Option<DtxChannelContext>,
+    pub annex_b: Option<AnnexBContext>,
 }
 
-const PREVIOUS_LSP_INITIAL_VALUES: [Word16; NB_LSP_COEFF] = [
+/// Annex B encoder state: voice activity detection and DTX/SID generation are
+/// always enabled together, so they are modelled as one optional context.
+pub struct AnnexBContext {
+    pub vad: VadChannelContext,
+    pub dtx: DtxChannelContext,
+}
+
+const PREVIOUS_LSP_INITIAL_VALUES: [i16; NB_LSP_COEFF] = [
     30000, 26000, 21000, 15000, 8000, 0, -8000, -15000, -21000, -26000,
 ];
 
@@ -62,16 +67,16 @@ const SIGNAL_CURRENT_FRAME_IDX: usize = L_LP_ANALYSIS_WINDOW - L_SUBFRAME - L_FR
 
 impl EncoderChannelContext {
     pub fn new(enable_vad: bool) -> Self {
-        let (vad_channel_context, dtx_channel_context) = if enable_vad {
-            (
-                Some(VadChannelContext::new()),
-                Some(DtxChannelContext::new()),
-            )
+        let annex_b = if enable_vad {
+            Some(AnnexBContext {
+                vad: VadChannelContext::new(),
+                dtx: DtxChannelContext::new(),
+            })
         } else {
-            (None, None)
+            None
         };
 
-        let mut ctx = EncoderChannelContext {
+        EncoderChannelContext {
             signal_buffer: [0; L_LP_ANALYSIS_WINDOW],
             previous_lsp_coefficients: PREVIOUS_LSP_INITIAL_VALUES,
             previous_q_lsp_coefficients: PREVIOUS_LSP_INITIAL_VALUES,
@@ -80,34 +85,15 @@ impl EncoderChannelContext {
             target_signal: [0; NB_LSP_COEFF + L_SUBFRAME],
             last_quantized_adaptative_codebook_gain: O2_IN_Q14,
             pre_processing_state: PreProcessingState::new(),
-            previous_q_lsf: [[0; NB_LSP_COEFF]; MA_MAX_K],
-            previous_gain_prediction_error: [0; 4],
-            enable_vad,
-            vad_channel_context,
-            dtx_channel_context,
-        };
-
-        // initPreProcessing
-        // Already done by PreProcessingState::new()
-
-        // initLSPQuantization
-        init_lsp_quantization(&mut ctx.previous_q_lsf);
-
-        // initGainQuantization
-        // In C: initGainQuantization sets previousGainPredictionError to -14dB in Q10.
-        // -14dB in Q10 is -14336? No.
-        // Let's check initGainQuantization in gainQuantization.c
-        // It sets it to -14336.
-        for i in 0..4 {
-            ctx.previous_gain_prediction_error[i] = -14336;
+            previous_q_lsf: init_lsp_quantization(),
+            previous_gain_prediction_error: [-14336; 4], /* -14 dB in Q10 */
+            annex_b,
         }
-
-        ctx
     }
 
     pub fn encode(
         &mut self,
-        input_frame: &[Word16],
+        input_frame: &[i16],
         bit_stream: &mut [u8],
         bit_stream_length: &mut u8,
     ) {
@@ -145,7 +131,7 @@ impl EncoderChannelContext {
             &mut auto_correlation_coefficients,
             &mut no_lag_auto_correlation_coefficients,
             &mut auto_correlation_coefficients_scale,
-            if self.enable_vad {
+            if self.annex_b.is_some() {
                 NB_LSP_COEFF + 3
             } else {
                 NB_LSP_COEFF + 1
@@ -158,15 +144,9 @@ impl EncoderChannelContext {
         }
 
         // Annex B: VAD/DTX.
-        if self.enable_vad {
-            let vad_channel_context = self
-                .vad_channel_context
-                .as_mut()
-                .expect("VAD enabled but context is missing");
-            let dtx_channel_context = self
-                .dtx_channel_context
-                .as_mut()
-                .expect("VAD enabled but context is missing");
+        if let Some(annex_b) = self.annex_b.as_mut() {
+            let vad_channel_context = &mut annex_b.vad;
+            let dtx_channel_context = &mut annex_b.dtx;
 
             for i in 0..NB_LSP_COEFF {
                 lsf_coefficients[i] = g729_acos_q15q13(lsp_coefficients[i]);
@@ -220,7 +200,7 @@ impl EncoderChannelContext {
                         _ => 0,
                     };
                     weighted_q_lp_coefficients[i] =
-                        mult16_16_p15(q_lp_coefficients[i], gamma) as Word16;
+                        mult16_16_p15(q_lp_coefficients[i], gamma) as i16;
                 }
 
                 compute_weighted_speech(
@@ -266,7 +246,7 @@ impl EncoderChannelContext {
         // LSP Quantization
         lsp_quantization(
             &mut self.previous_q_lsf,
-            &mut lsp_coefficients,
+            &lsp_coefficients,
             &mut q_lsp_coefficients,
             &mut parameters,
         );
@@ -306,7 +286,7 @@ impl EncoderChannelContext {
                 9 => GAMMA_E10,
                 _ => 0,
             };
-            weighted_q_lp_coefficients[i] = mult16_16_p15(q_lp_coefficients[i], gamma) as Word16;
+            weighted_q_lp_coefficients[i] = mult16_16_p15(q_lp_coefficients[i], gamma) as i16;
         }
 
         // Compute weighted speech
@@ -336,26 +316,23 @@ impl EncoderChannelContext {
         }
 
         // Subframe loop
-        impulse_response_input[0] = ONE_IN_Q12 as Word16;
-        for i in 1..L_SUBFRAME {
-            impulse_response_input[i] = 0;
-        }
+        impulse_response_input[0] = ONE_IN_Q12 as i16;
+        impulse_response_input[1..L_SUBFRAME].fill(0);
 
         let mut lp_coefficients_index = 0;
 
         for subframe_index in (0..L_FRAME).step_by(L_SUBFRAME) {
             let mut int_pitch_delay: i16 = 0;
             let mut frac_pitch_delay: i16 = 0;
-            let adaptative_codebook_gain: Word16;
 
             let mut impulse_response_buffer = [0i16; NB_LSP_COEFF + L_SUBFRAME];
             let mut filtered_adaptative_codebook_vector = [0i16; NB_LSP_COEFF + L_SUBFRAME];
-            let mut gain_quantization_xy: Word64 = 0;
-            let mut gain_quantization_yy: Word64 = 0;
+            let mut gain_quantization_xy: i64 = 0;
+            let mut gain_quantization_yy: i64 = 0;
             let mut fixed_codebook_vector = [0i16; L_SUBFRAME];
             let mut convolved_fixed_codebook_vector = [0i16; L_SUBFRAME];
-            let mut quantized_adaptative_codebook_gain: Word16 = 0;
-            let mut quantized_fixed_codebook_gain: Word16 = 0;
+            let mut quantized_adaptative_codebook_gain: i16 = 0;
+            let mut quantized_fixed_codebook_gain: i16 = 0;
 
             // Compute impulse response
             // synthesisFilter(impulseResponseInput, &(weightedqLPCoefficients[LPCoefficientsIndex]), &(impulseResponseBuffer[NB_LSP_COEFF]));
@@ -400,7 +377,7 @@ impl EncoderChannelContext {
                 &mut filtered_adaptative_codebook_vector,
             );
 
-            adaptative_codebook_gain = compute_adaptative_codebook_gain(
+            let adaptative_codebook_gain: i16 = compute_adaptative_codebook_gain(
                 &self.target_signal[NB_LSP_COEFF..],
                 &filtered_adaptative_codebook_vector[NB_LSP_COEFF..],
                 &mut gain_quantization_xy,
@@ -456,35 +433,30 @@ impl EncoderChannelContext {
 
             // Memory updates
             lp_coefficients_index += NB_LSP_COEFF;
-            self.last_quantized_adaptative_codebook_gain = quantized_adaptative_codebook_gain;
-            if self.last_quantized_adaptative_codebook_gain > ONE_POINT_2_IN_Q14 {
-                self.last_quantized_adaptative_codebook_gain = ONE_POINT_2_IN_Q14;
-            }
-            if self.last_quantized_adaptative_codebook_gain < O2_IN_Q14 {
-                self.last_quantized_adaptative_codebook_gain = O2_IN_Q14;
-            }
+            self.last_quantized_adaptative_codebook_gain =
+                quantized_adaptative_codebook_gain.clamp(O2_IN_Q14, ONE_POINT_2_IN_Q14);
 
             // Compute excitation
-            for i in 0..L_SUBFRAME {
-                self.excitation_vector[L_PAST_EXCITATION + subframe_index + i] = saturate(
+            for (i, sample) in self.excitation_vector[L_PAST_EXCITATION + subframe_index
+                ..L_PAST_EXCITATION + subframe_index + L_SUBFRAME]
+                .iter_mut()
+                .enumerate()
+            {
+                *sample = saturate(
                     pshr(
                         add32(
-                            mult16_16(
-                                self.excitation_vector[L_PAST_EXCITATION + subframe_index + i],
-                                quantized_adaptative_codebook_gain,
-                            ),
+                            mult16_16(*sample, quantized_adaptative_codebook_gain),
                             mult16_16(fixed_codebook_vector[i], quantized_fixed_codebook_gain),
                         ),
                         14,
                     ),
-                    MAX_INT16 as Word32,
-                )
-                    as Word16;
+                    MAX_INT16 as i32,
+                ) as i16;
             }
 
             // Update targetSignal memory
             let quantized_adaptative_codebook_gain_q13 =
-                pshr(quantized_adaptative_codebook_gain as Word32, 1) as Word16;
+                pshr(quantized_adaptative_codebook_gain as i32, 1) as i16;
             for i in 0..NB_LSP_COEFF {
                 let acc = mac16_16(
                     mult16_16(
@@ -495,9 +467,9 @@ impl EncoderChannelContext {
                     convolved_fixed_codebook_vector[L_SUBFRAME - NB_LSP_COEFF + i],
                 );
                 self.target_signal[i] = saturate(
-                    sub32(self.target_signal[L_SUBFRAME + i] as Word32, pshr(acc, 13)),
-                    MAX_INT16 as Word32,
-                ) as Word16;
+                    sub32(self.target_signal[L_SUBFRAME + i] as i32, pshr(acc, 13)),
+                    MAX_INT16 as i32,
+                ) as i16;
             }
         }
 
@@ -527,14 +499,15 @@ impl EncoderChannelContext {
     /// Returns zeros when VAD/DTX is disabled.
     pub fn rfc3389_payload(&self) -> [u8; 11] {
         let mut payload = [0u8; 11];
-        if let Some(dtx) = &self.dtx_channel_context {
+        if let Some(annex_b) = &self.annex_b {
+            let dtx = &annex_b.dtx;
             /* decodedLogEnergy is the frame mean energy, range [-12,66[ */
             payload[0] = (90 - dtx.decoded_log_energy() as i32) as u8;
             let reflection_coefficients = dtx.reflection_coefficients();
             for i in 0..NB_LSP_COEFF {
                 /* Ni = (ki in Q15)/258 + 127, 127 is 1/258 in Q15 */
                 payload[i + 1] = add16(
-                    shr(mult16_32_q15(127, -reflection_coefficients[i]), 16) as Word16,
+                    shr(mult16_32_q15(127, -reflection_coefficients[i]), 16) as i16,
                     127,
                 ) as u8;
             }

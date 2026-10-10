@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-pub mod g729;
+mod g729;
 
 /// One G.729 frame contains 80 16-bit PCM samples at 8 kHz.
 pub const FRAME_SAMPLES: usize = 80;

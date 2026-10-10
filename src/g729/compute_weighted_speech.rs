@@ -16,11 +16,11 @@ use crate::g729::lp_synthesis_filter::*;
 /*****************************************************************************/
 #[cfg_attr(target_arch = "xtensa", inline(never))]
 pub fn compute_weighted_speech(
-    input_signal: &[Word16],
-    q_lp_coefficients: &[Word16],
-    weighted_q_lp_coefficients: &[Word16],
-    weighted_input_signal: &mut [Word16],
-    lp_residual_signal: &mut [Word16],
+    input_signal: &[i16],
+    q_lp_coefficients: &[i16],
+    weighted_q_lp_coefficients: &[i16],
+    weighted_input_signal: &mut [i16],
+    lp_residual_signal: &mut [i16],
 ) {
     /* algo as specified in A3.3.3: */
     /* first compute LPResidualSignal[n] = inputSignal[n] + ∑(i=1..10)qLP[i]*inputSignal[n-i] specA3.3.3 eqA.3 */
@@ -33,7 +33,7 @@ pub fn compute_weighted_speech(
     /*** compute LPResisualSignal (spec A3.3.3 eqA.3) in Q0 ***/
     /* compute residual signal for the first subframe: use the first 10 qLPCoefficients */
     for i in 0..L_SUBFRAME {
-        let mut acc = sshl(input_signal[NB_LSP_COEFF + i] as Word32, 12); /* inputSignal in Q0 is shifted to set acc in Q12 */
+        let mut acc = sshl(input_signal[NB_LSP_COEFF + i] as i32, 12); /* inputSignal in Q0 is shifted to set acc in Q12 */
         for j in 0..NB_LSP_COEFF {
             acc = mac16_16(
                 acc,
@@ -41,12 +41,12 @@ pub fn compute_weighted_speech(
                 input_signal[NB_LSP_COEFF + i - j - 1],
             ); /* qLPCoefficients in Q12, inputSignal in Q0 -> acc in Q12 */
         }
-        lp_residual_signal[i] = saturate(pshr(acc, 12), MAX_16 as Word32) as Word16;
+        lp_residual_signal[i] = saturate(pshr(acc, 12), MAX_16 as i32) as i16;
         /* shift back acc to Q0 and saturate it to avoid overflow when going back to 16 bits */
     }
     /* compute residual signal for the second subframe: use the second part of qLPCoefficients */
     for i in L_SUBFRAME..L_FRAME {
-        let mut acc = sshl(input_signal[NB_LSP_COEFF + i] as Word32, 12); /* inputSignal in Q0 is shifted to set acc in Q12 */
+        let mut acc = sshl(input_signal[NB_LSP_COEFF + i] as i32, 12); /* inputSignal in Q0 is shifted to set acc in Q12 */
         for j in 0..NB_LSP_COEFF {
             acc = mac16_16(
                 acc,
@@ -54,7 +54,7 @@ pub fn compute_weighted_speech(
                 input_signal[NB_LSP_COEFF + i - j - 1],
             ); /* qLPCoefficients in Q12, inputSignal in Q0 -> acc in Q12 */
         }
-        lp_residual_signal[i] = saturate(pshr(acc, 12), MAX_16 as Word32) as Word16;
+        lp_residual_signal[i] = saturate(pshr(acc, 12), MAX_16 as i32) as i16;
         /* shift back acc to Q0 and saturate it to avoid overflow when going back to 16 bits */
     }
 
@@ -64,7 +64,7 @@ pub fn compute_weighted_speech(
     for i in 1..NB_LSP_COEFF {
         weighted_q_lp_low_pass_coefficients[i] = sub16(
             weighted_q_lp_coefficients[i],
-            mult16_16_q12(weighted_q_lp_coefficients[i - 1], O7_IN_Q12) as Word16,
+            mult16_16_q12(weighted_q_lp_coefficients[i - 1], O7_IN_Q12) as i16,
         );
     }
 
@@ -88,7 +88,7 @@ pub fn compute_weighted_speech(
     for i in 1..NB_LSP_COEFF {
         weighted_q_lp_low_pass_coefficients[i] = sub16(
             weighted_q_lp_coefficients[NB_LSP_COEFF + i],
-            mult16_16_q12(weighted_q_lp_coefficients[NB_LSP_COEFF + i - 1], O7_IN_Q12) as Word16,
+            mult16_16_q12(weighted_q_lp_coefficients[NB_LSP_COEFF + i - 1], O7_IN_Q12) as i16,
         );
     }
 

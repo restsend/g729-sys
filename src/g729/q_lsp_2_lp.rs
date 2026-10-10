@@ -9,7 +9,7 @@ use crate::g729::basic_operations::*;
 /*                                                                           */
 /*****************************************************************************/
 #[cfg_attr(target_arch = "xtensa", inline(never))]
-fn compute_polynomial_coefficients(q_lsp: &[Word16], f: &mut [Word32]) {
+fn compute_polynomial_coefficients(q_lsp: &[i16], f: &mut [i32]) {
     /* init values */
     /* f[-1] which is not available is to be egal at 0, it is directly removed in the following when used as a factor */
     f[0] = 16777216; /* 1 in Q24, f[0] is used only for the other coefficient computation */
@@ -34,7 +34,7 @@ fn compute_polynomial_coefficients(q_lsp: &[Word16], f: &mut [Word32]) {
             ); /* qLPS in Q0.15 and f in Q24, using MULT16_32_P14 instead of P15 does the *2 on qLSP. Result in Q24 */
         }
         /* f[1] -=  2*qLSP[2i-1] */
-        f[1] = sub32(f[1], sshl(q_lsp[2 * i - 2] as Word32, 10)); /* qLSP in Q0.15, must be shift by 9 to get in Q24 and one more to be *2 */
+        f[1] = sub32(f[1], sshl(q_lsp[2 * i - 2] as i32, 10)); /* qLSP in Q0.15, must be shift by 9 to get in Q24 and one more to be *2 */
     }
 }
 
@@ -46,9 +46,9 @@ fn compute_polynomial_coefficients(q_lsp: &[Word16], f: &mut [Word32]) {
 /*                                                                           */
 /*****************************************************************************/
 #[cfg_attr(target_arch = "xtensa", inline(never))]
-pub fn q_lsp_2_lp(q_lsp: &[Word16], lp: &mut [Word16]) {
-    let mut f1 = [0 as Word32; 6];
-    let mut f2 = [0 as Word32; 6]; /* define two buffer to store the polynomials coefficients (size is 6 for 5 coefficient because fx[0] is used during computation as a buffer) */
+pub fn q_lsp_2_lp(q_lsp: &[i16], lp: &mut [i16]) {
+    let mut f1 = [0_i32; 6];
+    let mut f2 = [0_i32; 6]; /* define two buffer to store the polynomials coefficients (size is 6 for 5 coefficient because fx[0] is used during computation as a buffer) */
 
     compute_polynomial_coefficients(q_lsp, &mut f1);
 
@@ -66,8 +66,8 @@ pub fn q_lsp_2_lp(q_lsp: &[Word16], lp: &mut [Word16]) {
     /* In Rust we just index from 1 */
     for i in 0..5 {
         /* i in [0,5[ : LP[i] = (f1[i] + f2[i])/2 */
-        lp[i] = pshr(add32(f1[i + 1], f2[i + 1]), 13) as Word16; /* f1 and f2 in Q24, LP in Q12 */
+        lp[i] = pshr(add32(f1[i + 1], f2[i + 1]), 13) as i16; /* f1 and f2 in Q24, LP in Q12 */
         /* i in [5,9[ : LP[i] = (f1[9-i] - f2[9-i])/2 */
-        lp[9 - i] = pshr(sub32(f1[i + 1], f2[i + 1]), 13) as Word16; /* f1 and f2 in Q24, LP in Q12 */
+        lp[9 - i] = pshr(sub32(f1[i + 1], f2[i + 1]), 13) as i16; /* f1 and f2 in Q24, LP in Q12 */
     }
 }

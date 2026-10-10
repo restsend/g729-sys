@@ -1,18 +1,17 @@
-use crate::g729::basic_operations::Word16;
 use crate::g729::ld8k::*;
 
 /* codebook for adaptative code vector */
-pub const B30: [Word16; 31] = [
+pub const B30: [i16; 31] = [
     /* in Q0.15 */
     29443, 25207, 14701, 3143, -4402, -5850, -2783, 1211, 3130, 2259, 0, -1652, -1666, -464, 756,
     1099, 550, -245, -634, -451, 0, 308, 296, 78, -120, -165, -79, 34, 91, 70, 0,
 ];
 
 /* according to spec 3.9.1: MA predictionCoefficients {0.68, 0.58, 0.34, 0.19} in Q14 */
-pub const MA_PREDICTION_COEFFICIENTS: [Word16; 4] = [11141, 9503, 5571, 3113];
+pub const MA_PREDICTION_COEFFICIENTS: [i16; 4] = [11141, 9503, 5571, 3113];
 
 /* Hamming_cos window for LPC analysis as defined in spec 3.2.1 eq3 */
-pub const WLP: [Word16; 240] = [
+pub const WLP: [i16; 240] = [
     /* in Q15 */
     2621, 2623, 2629, 2638, 2651, 2668, 2689, 2713, 2741, 2772, 2808, 2847, 2890, 2936, 2986, 3040,
     3097, 3158, 3223, 3291, 3363, 3438, 3517, 3599, 3685, 3774, 3867, 3963, 4063, 4166, 4272, 4382,
@@ -35,12 +34,12 @@ pub const WLP: [Word16; 240] = [
 ];
 
 /* lag window as defined in spec 3.2.1 eq6 : up to 12 values for VAD */
-pub const WLAG: [Word16; 13] = [
+pub const WLAG: [i16; 13] = [
     /* in Q15 note first coeff is not used */
     32767, 32728, 32619, 32438, 32187, 31867, 31480, 31029, 30517, 29946, 29321, 28646, 27923,
 ];
 
-pub const L1: [[Word16; NB_LSP_COEFF]; L1_RANGE] = [
+pub const L1: [[i16; NB_LSP_COEFF]; L1_RANGE] = [
     [
         1486, 2168, 3751, 9074, 12134, 13944, 17983, 19173, 21190, 21820,
     ],
@@ -427,7 +426,7 @@ pub const L1: [[Word16; NB_LSP_COEFF]; L1_RANGE] = [
     ],
 ];
 
-pub const L2L3: [[Word16; NB_LSP_COEFF]; L2_RANGE] = [
+pub const L2L3: [[i16; NB_LSP_COEFF]; L2_RANGE] = [
     [-435, -815, -742, 1033, -518, 582, -1201, 829, 86, 385],
     [-833, -891, 463, -8, -1251, 1450, 72, -231, 864, 661],
     [-1021, 231, -306, 321, -220, -163, -526, -754, -1633, 267],
@@ -471,7 +470,7 @@ pub const L2_SUBSET_INDEX: [usize; NOISE_L2_RANGE] =
 pub const L3_SUBSET_INDEX: [usize; NOISE_L2_RANGE] =
     [16, 1, 0, 0, 8, 25, 22, 20, 19, 23, 20, 31, 4, 31, 20, 31];
 
-pub const MA_PREDICTOR: [[[Word16; NB_LSP_COEFF]; MA_MAX_K]; L0_RANGE] = [
+pub const MA_PREDICTOR: [[[i16; NB_LSP_COEFF]; MA_MAX_K]; L0_RANGE] = [
     [
         [8421, 9109, 9175, 8965, 9034, 9057, 8765, 8775, 9106, 8673],
         [7018, 7189, 7638, 7307, 7444, 7379, 7038, 6956, 6930, 6868],
@@ -486,21 +485,21 @@ pub const MA_PREDICTOR: [[[Word16; NB_LSP_COEFF]; MA_MAX_K]; L0_RANGE] = [
     ],
 ];
 
-pub const MA_PREDICTOR_SUM: [[Word16; NB_LSP_COEFF]; L0_RANGE] = [
+pub const MA_PREDICTOR_SUM: [[i16; NB_LSP_COEFF]; L0_RANGE] = [
     [7798, 8447, 8205, 8293, 8126, 8477, 8447, 8703, 9043, 8604],
     [
         14585, 18333, 19772, 17344, 16426, 16459, 15155, 15220, 16043, 15708,
     ],
 ];
 
-pub const INV_MA_PREDICTOR_SUM: [[Word16; NB_LSP_COEFF]; L0_RANGE] = [
+pub const INV_MA_PREDICTOR_SUM: [[i16; NB_LSP_COEFF]; L0_RANGE] = [
     [
         17210, 15888, 16357, 16183, 16516, 15833, 15888, 15421, 14840, 15597,
     ],
     [9202, 7320, 6788, 7738, 8170, 8154, 8856, 8818, 8366, 8544],
 ];
 
-pub const NOISE_MA_PREDICTOR: [[[Word16; NB_LSP_COEFF]; MA_MAX_K]; L0_RANGE] = [
+pub const NOISE_MA_PREDICTOR: [[[i16; NB_LSP_COEFF]; MA_MAX_K]; L0_RANGE] = [
     [
         [8421, 9109, 9175, 8965, 9034, 9057, 8765, 8775, 9106, 8673],
         [7018, 7189, 7638, 7307, 7444, 7379, 7038, 6956, 6930, 6868],
@@ -515,14 +514,14 @@ pub const NOISE_MA_PREDICTOR: [[[Word16; NB_LSP_COEFF]; MA_MAX_K]; L0_RANGE] = [
     ],
 ];
 
-pub const NOISE_MA_PREDICTOR_SUM: [[Word16; NB_LSP_COEFF]; L0_RANGE] = [
+pub const NOISE_MA_PREDICTOR_SUM: [[i16; NB_LSP_COEFF]; L0_RANGE] = [
     [7798, 8447, 8205, 8293, 8126, 8477, 8447, 8703, 9043, 8604],
     [
         10514, 12402, 12833, 11914, 11447, 11670, 11132, 11311, 11844, 11447,
     ],
 ];
 
-pub const INV_NOISE_MA_PREDICTOR_SUM: [[Word16; NB_LSP_COEFF]; L0_RANGE] = [
+pub const INV_NOISE_MA_PREDICTOR_SUM: [[i16; NB_LSP_COEFF]; L0_RANGE] = [
     [
         17210, 15888, 16357, 16183, 16516, 15833, 15888, 15421, 14840, 15597,
     ],
@@ -540,7 +539,7 @@ pub const INDEX_MAPPING_GA: [u16; 8] = [5, 1, 4, 7, 3, 0, 6, 2];
 pub const INDEX_MAPPING_GB: [u16; 16] = [4, 6, 0, 2, 12, 14, 8, 10, 15, 11, 9, 13, 7, 3, 1, 5];
 
 /* GA and GB codebooks: first element is for adaptativeCodebookGain (in Q14), second element is for fixedCodebookGain computation (in Q12) */
-pub const GA_CODEBOOK: [[Word16; 2]; 8] = [
+pub const GA_CODEBOOK: [[i16; 2]; 8] = [
     /* Q14      Q12 */
     [0, 758],
     [1551, 1213],
@@ -552,7 +551,7 @@ pub const GA_CODEBOOK: [[Word16; 2]; 8] = [
     [2678, 13581],
 ];
 
-pub const GB_CODEBOOK: [[Word16; 2]; 16] = [
+pub const GB_CODEBOOK: [[i16; 2]; 16] = [
     /* Q14       Q12 */
     [826, 1003],
     [1994, 0],
@@ -573,12 +572,12 @@ pub const GB_CODEBOOK: [[Word16; 2]; 16] = [
 ];
 
 /* quantised SID gain retrieved from ITU code, in Q3 */
-pub const SID_GAIN_CODEBOOK: [Word16; 32] = [
+pub const SID_GAIN_CODEBOOK: [i16; 32] = [
     2, 5, 8, 13, 20, 32, 50, 64, 80, 101, 127, 160, 201, 253, 318, 401, 505, 635, 800, 1007, 1268,
     1596, 2010, 2530, 3185, 4009, 5048, 6355, 8000, 10071, 12679, 15962,
 ];
 
 /* Low Band Filter FIR for VAD in Q15 */
-pub const LOW_BAND_FILTER: [Word16; NB_LSP_COEFF + 3] = [
+pub const LOW_BAND_FILTER: [i16; NB_LSP_COEFF + 3] = [
     7869, 7011, 4838, 2299, 321, -660, -782, -484, -164, 3, 39, 21, 4,
 ];

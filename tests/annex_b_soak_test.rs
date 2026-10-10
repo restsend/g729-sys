@@ -44,7 +44,7 @@ fn annex_b_long_session_is_stable_and_exercises_dtx() {
 
         let out = encoder.encode(&pcm);
         assert!(
-            out.len() == 0 || out.len() == VOICE_FRAME_BYTES || out.len() == 2,
+            out.is_empty() || out.len() == VOICE_FRAME_BYTES || out.len() == 2,
             "frame {}: unexpected DTX length {}",
             frame,
             out.len()
