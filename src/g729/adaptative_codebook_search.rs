@@ -30,15 +30,15 @@ pub fn generate_adaptative_codebook_vector(
     let b30_inc = &B30[b30_increased_idx..b30_increased_idx + 28];
     let b30_dec = &B30[b30_decreased_idx..b30_decreased_idx + 28];
 
+    // 10 taps, stride 3: materialise them as fixed-size arrays so the inner loop
+    // is a fully unrollable, bounds-check-free 10-iteration loop.
+    let b30_inc_taps: [i16; 10] = core::array::from_fn(|k| b30_inc[3 * k]);
+    let b30_dec_taps: [i16; 10] = core::array::from_fn(|k| b30_dec[3 * k]);
+
     for n in 0..L_SUBFRAME {
         let mut acc: i32 = 0; // acc in Q15
 
-        for (k, (&inc, &dec)) in b30_inc
-            .iter()
-            .step_by(3)
-            .zip(b30_dec.iter().step_by(3))
-            .enumerate()
-        {
+        for (k, (&inc, &dec)) in b30_inc_taps.iter().zip(b30_dec_taps.iter()).enumerate() {
             acc = mac16_16(acc, excitation_vector[delayed_idx + n - k], inc);
             acc = mac16_16(acc, excitation_vector[delayed_idx + n + 1 + k], dec);
         }

@@ -80,11 +80,13 @@ pub fn find_open_loop_pitch_delay(weighted_input_signal: &[i16]) -> u16 {
 
     let current_frame_offset = MAXIMUM_INT_PITCH_DELAY;
 
-    for &sample in weighted_input_signal
-        .iter()
-        .take(MAXIMUM_INT_PITCH_DELAY + L_FRAME)
-    {
-        autocorrelation = mac64(autocorrelation, sample as i32, sample as i32);
+    #[allow(clippy::needless_range_loop)] // hot DSP loop
+    for i in 0..MAXIMUM_INT_PITCH_DELAY + L_FRAME {
+        autocorrelation = mac64(
+            autocorrelation,
+            weighted_input_signal[i] as i32,
+            weighted_input_signal[i] as i32,
+        );
     }
 
     let use_scaled_buffer = if autocorrelation > MAX_32 as i64 {

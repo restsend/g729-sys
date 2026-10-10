@@ -87,16 +87,14 @@ pub fn compute_lp(
     let mut right_shift_to_normalise = 0;
     let mut residual_energy: i32 = 0;
 
-    for ((windowed, &sample), &coeff) in windowed_signal
-        .iter_mut()
-        .zip(signal.iter())
-        .zip(WLP.iter())
-    {
-        *windowed = mult16_16_p15(sample, coeff) as i16;
+    #[allow(clippy::needless_range_loop)] // simple indexable DSP loop
+    for i in 0..L_LP_ANALYSIS_WINDOW {
+        windowed_signal[i] = mult16_16_p15(signal[i], WLP[i]) as i16;
     }
 
-    for &sample in windowed_signal.iter() {
-        acc64 = mac64(acc64, sample as i32, sample as i32);
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..L_LP_ANALYSIS_WINDOW {
+        acc64 = mac64(acc64, windowed_signal[i] as i32, windowed_signal[i] as i32);
     }
     if acc64 == 0 {
         acc64 = 1;

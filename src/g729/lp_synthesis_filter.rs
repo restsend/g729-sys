@@ -15,9 +15,10 @@ pub fn lp_synthesis_filter(
     lp_coefficients: &[i16],
     reconstructed_speech: &mut [i16],
 ) {
-    for (i, &excitation) in excitation_vector.iter().enumerate().take(L_SUBFRAME) {
+    #[allow(clippy::needless_range_loop)] // hot unrolled MAC: keep explicit indexing
+    for i in 0..L_SUBFRAME {
         let base = NB_LSP_COEFF + i;
-        let mut acc = sshl(excitation as i32, 12); /* acc get the first term of the sum, in Q12 (excitationVector is in Q0)*/
+        let mut acc = sshl(excitation_vector[i] as i32, 12); /* acc get the first term of the sum, in Q12 (excitationVector is in Q0)*/
 
         acc = msu16_16(acc, lp_coefficients[0], reconstructed_speech[base - 1]);
         acc = msu16_16(acc, lp_coefficients[1], reconstructed_speech[base - 2]);

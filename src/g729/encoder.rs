@@ -392,15 +392,16 @@ impl EncoderChannelContext {
             self.last_quantized_adaptative_codebook_gain =
                 quantized_adaptative_codebook_gain.clamp(O2_IN_Q14, ONE_POINT_2_IN_Q14);
 
-            for (i, sample) in self.excitation_vector[L_PAST_EXCITATION + subframe_index
-                ..L_PAST_EXCITATION + subframe_index + L_SUBFRAME]
-                .iter_mut()
-                .enumerate()
-            {
-                *sample = saturate(
+            #[allow(clippy::needless_range_loop)] // hot fixed-point MAC: explicit indexing
+            for i in 0..L_SUBFRAME {
+                let base = L_PAST_EXCITATION + subframe_index + i;
+                self.excitation_vector[base] = saturate(
                     pshr(
                         add32(
-                            mult16_16(*sample, quantized_adaptative_codebook_gain),
+                            mult16_16(
+                                self.excitation_vector[base],
+                                quantized_adaptative_codebook_gain,
+                            ),
                             mult16_16(fixed_codebook_vector[i], quantized_fixed_codebook_gain),
                         ),
                         14,

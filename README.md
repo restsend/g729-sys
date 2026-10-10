@@ -22,8 +22,8 @@ state (VAD/DTX/CNG) are heap-free and work without `std`.
 ### Performance
 
 On-device numbers from the ESP32-S3 (QFN56, dual-core 240 MHz, **no FPU**)
-`wifi_ua` firmware baseline in [`../rtcembed`](../rtcembed)
-(`scripts/baseline/BASELINE.md`), `opt-level = 3`, per 20 ms frame:
+`wifi_ua` firmware baseline (`scripts/baseline/BASELINE.md`),
+`opt-level = 3`, per 20 ms frame:
 
 | path | µs / 20 ms frame | % of one 240 MHz core |
 |---|---|---|
